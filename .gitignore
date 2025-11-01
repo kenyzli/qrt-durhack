@@ -8,3 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Toy datasets
+durhack-2025-01
+emissions.csv
