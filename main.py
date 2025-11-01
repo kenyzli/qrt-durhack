@@ -1,14 +1,14 @@
 import polars as pl
 import os, requests, json, re
-def main():
-    print("Hello from kenny!")
+
+# major airports from QRT offices 
+OFFICES = [
+    "LHR"
+]
 
 emissions_file = "/opt/durhack/emissions.csv"
 emissions = pl.scan_csv(emissions_file, infer_schema_length=0).collect()
-print(emissions.columns)
-# if __name__ == "__main__":
-#     main()
-
+# print(emissions.columns)
 
 # from A to B on this date. 
 # A and B are airport codes like LHR and BOM
@@ -26,8 +26,8 @@ def get_flights_score(A: str, B: str, year: int, month: int, day: int) -> pl.Dat
         schedules.filter((pl.col("DEPAPT") == A) & (pl.col("ARRAPT") == B))
     )
     
-    print("Flights:")
-    print(flights.collect().columns)
+    # print("Flights:")
+    # print(flights.collect().columns)
     
     # Join with the emissions data on carrier and flight number, sorting on emissions
     result = (
@@ -40,21 +40,31 @@ def get_flights_score(A: str, B: str, year: int, month: int, day: int) -> pl.Dat
         .sort("ESTIMATED_CO2_TOTAL_TONNES")
         .select([
             pl.col("FLTNO"), 
-            pl.col("DEPAPT"),
-            pl.col("ARRAPT"),
+            pl.col("DEPCITY"),
+            pl.col("ARRCITY"),
+            
+            # pl.col("DEPAPT"),
+            # pl.col("ARRAPT"),
+            
             pl.col("ARRTIM"),
             pl.col("DEPTIM"),
             pl.col("ELPTIM"),
             pl.col("ESTIMATED_CO2_TOTAL_TONNES"),
-            pl.col("")
+            pl.col("INTAPT")
         ])
     ).collect()
     
-    # print(result)
+    print(result)
 
-get_flights_by_emission_direct("LHR", "BOM", 2024, "01", "20")
+get_flights_score("LHR", "BOM", 2024, "01", "20")
 
 print(len(set(emissions["DEPARTURE_AIRPORT"])))
 
 
 
+def evaluate_naive_atOffice(
+    inbound_map  # location: num coming from there
+):
+    # each office gets a score
+    scores = {locationL: -1 for location in OFFICES}
+    
