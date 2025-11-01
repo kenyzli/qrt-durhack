@@ -64,6 +64,19 @@ def get_flights_score(A: str, B: str,
             (pl.col("ESTIMATED_CO2_TOTAL_TONNES") / pl.col("TOTAL_SEATS").cast(pl.Float64))
             .alias("ESTIMATED_CO2_PER_CAPITA")
         )
+        .filter(
+            pl.col("ESTIMATED_CO2_PER_CAPITA").is_not_null() & 
+            pl.col("ELPTIM").is_not_null()
+        )
+        .with_columns(
+            pl.struct(["ESTIMATED_CO2_PER_CAPITA", "ELPTIM"])
+            .map_elements(
+                lambda row: scoreFunction(row["ESTIMATED_CO2_PER_CAPITA"], row["ELPTIM"]) 
+                if row["ESTIMATED_CO2_PER_CAPITA"] is not None and row["ELPTIM"] is not None 
+                else None,
+                return_dtype=pl.Float64
+            )
+        ) 
         .with_columns(
             pl.struct(["ESTIMATED_CO2_PER_CAPITA", "ELPTIM"])
             .map_elements(
@@ -116,15 +129,18 @@ def evaluate_naive_atOffice(
             cur_score_variance = -1
             flights = {}
             for out_dest, n_out in outbound_map.items(): 
+                print("doing", out_dest, "to", cur_office)
                 if out_dest == cur_office:
                     continue
-                flights[out_dest] = dict(get_flights_score(
+                res = dict(get_flights_score(
                     out_dest, 
                     cur_office, 
                     window_start,
                     lambda a, b: a*b
                 ))
-                flights[out_dest]["FLIGHT_SCORE"] *= outbound_map[out_dest] # multiply by number of people
+                if res["FLTNO"]:
+                    flights[out_dest] = res
+                    flights[out_dest]["FLIGHT_SCORE"] *= outbound_map[out_dest] # multiply by number of people
                         
             # if total score from co2 and fairness is better: 
             var =  np.var([f["FLIGHT_SCORE"][0] for f in flights.values()])
