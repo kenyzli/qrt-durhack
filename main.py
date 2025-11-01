@@ -10,7 +10,7 @@ OFFICES = [
     "BOM",
 ]
 
-emissions_file = "/opt/durhack/emissions.csv"
+emissions_file = "emissions.csv"
 emissions = pl.scan_csv(emissions_file, infer_schema_length=0).collect()
 # print(emissions.columns)
 
@@ -22,10 +22,7 @@ def get_flights_score(A: str, B: str,
                       depart_on: datetime,
                       scoreFunction: callable
                       ) -> pl.DataFrame:
-    schedule_file = (
-    f"/opt/durhack/schedules/{depart_on.year}/"
-    f"{depart_on.month:02d}/{depart_on.day:02d}.csv"
-    )    
+    schedule_file = "01.csv"
     schedules = pl.scan_csv(schedule_file, infer_schema_length=10000)
     emissions = pl.scan_csv(emissions_file, infer_schema_length=10000)
     #
@@ -95,7 +92,7 @@ def evaluate_naive_atOffice(
     window_end, 
     duration_days
 ):
-    print((window_end - window_start).days - duration_days + 1)
+    # print((window_end - window_start).days - duration_days + 1)
     for day in range(0, (window_end - window_start).days - duration_days + 1):
         # each office gets a score
         # scores = {location: -1 for location in OFFICES}
