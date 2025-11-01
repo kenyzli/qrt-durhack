@@ -8,6 +8,18 @@ import numpy as np
 OFFICES = [
     "LHR",
     "BOM",
+    "CDG",
+    "HKG",
+    "SIN",
+    "UAE",
+    "DXB",
+    "PVG",
+    "ZRH",
+    "GVA",
+    "AAR",
+    "SYD",
+    "WRO",
+    "BUD"
 ]
 
 emissions_file = "emissions.csv"
