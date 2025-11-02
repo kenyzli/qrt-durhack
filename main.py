@@ -282,6 +282,8 @@ def evaluate_naive_atOffice(
         all_routes_found = True
 
         for outbound_office, num in outbound_map.items():
+            if (meeting_point == outbound_office) or (num <= 0):
+                continue
             itinerary, eta = fastest_leq_one_stop(
                 df_ts,
                 outbound_office,
