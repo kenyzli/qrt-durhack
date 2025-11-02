@@ -461,8 +461,13 @@ def _evaluate_single_meeting_point(
         attendee_hours_by_office[outbound_office] = round(hours, 2)
         per_attendee_hours.extend([hours] * num)
         arrival_times.extend([eta] * num)
-        attendee_timezone_by_office[outbound_office] = round(route_tz_shift, 2)
-        per_attendee_timezone_shifts.extend([route_tz_shift] * num)
+        if abs(route_tz_shift) >= 6.0:
+            jetlag_val=abs(route_tz_shift)
+        
+        else:
+            jetlag_val=0.0
+        attendee_timezone_by_office[outbound_office] = round(jetlag_val, 2)
+        per_attendee_timezone_shifts.extend([jetlag_val] * num)
 
         total_co2 += route_co2_per_capita * num
         co2_by_office[outbound_office] = {
