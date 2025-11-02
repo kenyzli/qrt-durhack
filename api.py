@@ -164,7 +164,7 @@ def plan():
         return jsonify({"error": "invalid availability_window", "detail": str(e)}), 400
 
     # evaluate_naive_atOffice only uses days for duration; keep hours separately
-    duration_days = int(duration.get("days", 0))
+    duration_days = int(duration.get("days", 0)) + duration.get("hours", 0) / 24.0
 
     # call the existing function to pick flights
     try:
@@ -199,7 +199,7 @@ def plan():
 
     sorted_meeting_points = sorted(viable_meeting_points, key=_score_key)
 
-    iata_to_city = {v: k for k, v in CITY_TO_IATA.items()}
+    IATA_TO_CITY = {v: k for k, v in CITY_TO_IATA.items()}
 
     # gemini_summary_enabled = True
     # gemini_setup_error = None
@@ -218,7 +218,7 @@ def plan():
 
         attendee_travel_hours_named = {}
         for iata, hrs in attendee_hours_by_office.items():
-            name = iata_to_city.get(iata, iata)
+            name = IATA_TO_CITY.get(iata, iata)
             try:
                 attendee_travel_hours_named[name] = round(float(hrs), 2)
             except Exception:
@@ -226,12 +226,12 @@ def plan():
         
         attendee_routes_named = {}
         for iata, route_nodes in attendee_routes_by_office.items():
-            name = iata_to_city.get(iata, iata)
+            name = IATA_TO_CITY.get(iata, iata)
             attendee_routes_named[name] = route_nodes
 
         attendee_co2_named = {}
         for iata, metrics in attendee_co2_by_office.items():
-            name = iata_to_city.get(iata, iata)
+            name = IATA_TO_CITY.get(iata, iata)
             attendee_co2_named[name] = metrics
 
         event_location = IATA_TO_CITY.get(meeting_point, meeting_point)
