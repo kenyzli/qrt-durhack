@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import math
 import numpy as np
 
-from main import get_flights_score, evaluate_naive_atOffice, OFFICES
+from main import evaluate_naive_atOffice, OFFICES
 
 app = Flask(__name__)
 

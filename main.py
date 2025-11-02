@@ -49,7 +49,7 @@ def get_flights_score(A: str, B: str,
     print("Flights:")
     print(flights.collect().columns)
     
-     Join with the emissions data on carrier and flight number, sorting on emissions
+    # Join with the emissions data on carrier and flight number, sorting on emissions
     result = (
         flights.join(
             emissions,
@@ -202,9 +202,10 @@ def evaluate_naive_atOffice(
         # should be optimised. 
         for cur_office in OFFICES:
             cur_score_variance = -1
+            cur_total = -1
             flights = {}
             for out_from, n_out in outbound_map.items(): 
-                print("doing", out_from, "to", cur_office)
+                # print("doing", out_from, "to", cur_office)
                 if out_from == cur_office:
                     continue
                 res = dict(get_flights_score_v2(
@@ -218,8 +219,11 @@ def evaluate_naive_atOffice(
                     flights[out_from]["FLIGHT_SCORE"] *= outbound_map[out_from] # multiply by number of people
                         
             # if total score from co2 and fairness is better: 
-            var =  np.var([f["FLIGHT_SCORE"][0] for f in flights.values()])
-            if (cur_score_variance == -1 or cur_score_variance > var):
+            score_ls = [f["FLIGHT_SCORE"][0] for f in flights.values()]
+            var =  np.var(score_ls)
+            total = sum(score_ls)
+            # if (cur_score_variance == -1 or cur_score_variance > var):
+            if cur_total == -1 or cur_total > total:
                 cur_score_variance = var
                 final_flights = flights
         
