@@ -6,7 +6,7 @@ import os
 import numpy as np
 import google.generativeai as genai
 
-from main import evaluate_naive_atOffice, OFFICES
+from main import evaluate_naive_atOffice, OFFICES, evaluate_naive_atAirport
 
 app = Flask(__name__)
 
@@ -149,6 +149,7 @@ def plan():
     attendees = payload.get("attendees", {})
     window = payload.get("availability_window", {})
     duration = payload.get("event_duration", {})
+    airports = payload.get("airports", False)
 
     # map city names to IATA
     unknown = [c for c in attendees.keys() if c not in CITY_TO_IATA]
@@ -164,13 +165,19 @@ def plan():
         return jsonify({"error": "invalid availability_window", "detail": str(e)}), 400
 
     # evaluate_naive_atOffice only uses days for duration; keep hours separately
-    duration_days = int(duration.get("days", 0))
+    duration_days = int(duration.get("days", 0)) + duration.get("hours", 0) / 24.0
+
+    meeting_stats, meeting_stats_by_office = {}
 
     # call the existing function to pick flights
     try:
-        meeting_stats, meeting_stats_by_office = evaluate_naive_atOffice(
-            outbound_map, window_start, window_end, duration_days
-        )
+        if airports:
+            meeting_stats, meeting_stats_by_office = evaluate_naive_atAirport(
+                outbound_map, window_start, window_end, duration_days)
+        else:
+            meeting_stats, meeting_stats_by_office = evaluate_naive_atOffice(
+                outbound_map, window_start, window_end, duration_days)
+
     except Exception as e:
         return jsonify({"error": "evaluation_failed", "detail": str(e)}), 500
 
@@ -199,7 +206,7 @@ def plan():
 
     sorted_meeting_points = sorted(viable_meeting_points, key=_score_key)
 
-    iata_to_city = {v: k for k, v in CITY_TO_IATA.items()}
+    IATA_TO_CITY = {v: k for k, v in CITY_TO_IATA.items()}
 
     # gemini_summary_enabled = True
     # gemini_setup_error = None
@@ -218,7 +225,7 @@ def plan():
 
         attendee_travel_hours_named = {}
         for iata, hrs in attendee_hours_by_office.items():
-            name = iata_to_city.get(iata, iata)
+            name = IATA_TO_CITY.get(iata, iata)
             try:
                 attendee_travel_hours_named[name] = round(float(hrs), 2)
             except Exception:
@@ -226,12 +233,12 @@ def plan():
         
         attendee_routes_named = {}
         for iata, route_nodes in attendee_routes_by_office.items():
-            name = iata_to_city.get(iata, iata)
+            name = IATA_TO_CITY.get(iata, iata)
             attendee_routes_named[name] = route_nodes
 
         attendee_co2_named = {}
         for iata, metrics in attendee_co2_by_office.items():
-            name = iata_to_city.get(iata, iata)
+            name = IATA_TO_CITY.get(iata, iata)
             attendee_co2_named[name] = metrics
 
         event_location = IATA_TO_CITY.get(meeting_point, meeting_point)
