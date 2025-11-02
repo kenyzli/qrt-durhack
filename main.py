@@ -509,43 +509,48 @@ class SearchNode:
         self.children = children
 
 
-middle_east = SearchNode("DXB", [SearchNode("DOH"), SearchNode("IST")])
+middle_east = SearchNode("DXB", [SearchNode("DXB"), SearchNode("DOH"), SearchNode("IST")])
 
-pacific_coast = SearchNode("SFO", [SearchNode("SEA")])
-desert_southwest = SearchNode("LAS", [SearchNode("PHX")])
-west = SearchNode("LAX", [pacific_coast, desert_southwest])
-central_north = SearchNode("ORD", [SearchNode("MSP"), SearchNode("DTW"), SearchNode("DEN")])
-central_south = SearchNode("DFW", [SearchNode("IAH"), SearchNode("MEX")])
-southeast = SearchNode("ATL", [SearchNode("CLT"),search_root("MCO"),SearchNode("MIA")])
-new_york_cluster = SearchNode("JFK", [SearchNode("EWR"), SearchNode("PHL")])
-northeast_canada = SearchNode("BOS", [SearchNode("YYZ")])
-east = SearchNode("JFK", [southeast, new_york_cluster, northeast_canada])
-north_america = SearchNode("ATL", [west, central_north, central_south, east])
+pacific_coast = SearchNode("SFO", [SearchNode("SFO"), SearchNode("SEA")])
+desert_southwest = SearchNode("LAS", [SearchNode("LAS"), SearchNode("PHX")])
+west = SearchNode("LAX", [SearchNode("LAX"), pacific_coast, desert_southwest])
 
-south_america = SearchNode("GRU")
+central_north = SearchNode("ORD", [SearchNode("ORD"), SearchNode("MSP"), SearchNode("DTW"), SearchNode("DEN")])
+central_south = SearchNode("DFW", [SearchNode("DFW"), SearchNode("IAH"), SearchNode("MEX")])
 
-china_east = SearchNode("PVG", [SearchNode("PEK"), SearchNode("SHA")])
-china_southwest = SearchNode("CAN", [SearchNode("SZX"), SearchNode("CTU"), SearchNode("KMG")])
-north_asia = SearchNode("HND", [SearchNode("NRT"), SearchNode("ICN")])
-greater_china = SearchNode("HKG", [SearchNode("TPE")])
-south_asia = SearchNode("DEL", [SearchNode("BOM")])
-china = SearchNode("PVG", [china_east, china_southwest, north_asia, greater_china, south_asia])
-south_east_asia = SearchNode("SIN", [SearchNode("KUL"), SearchNode("BKK"), SearchNode("MNL"), SearchNode("CGK")])
-oceania = SearchNode("SYD", [SearchNode("MEL")])
+southeast = SearchNode("ATL", [SearchNode("ATL"), SearchNode("CLT"), SearchNode("MCO"), SearchNode("MIA")])
+new_york_cluster = SearchNode("JFK", [SearchNode("JFK"), SearchNode("EWR"), SearchNode("PHL")])
+northeast_canada = SearchNode("BOS", [SearchNode("BOS"), SearchNode("YYZ")])
+east = SearchNode("JFK", [SearchNode("JFK"), southeast, new_york_cluster, northeast_canada])
 
-asia_pacific = SearchNode("DEL", [china, south_east_asia, oceania])
+north_america = SearchNode("ATL", [SearchNode("ATL"), west, central_north, central_south, east])
 
-# Europe
-northwest_hubs = SearchNode("CDG", [SearchNode("AMS"), SearchNode("FRA")])
-british_isles = SearchNode("LHR", [SearchNode("LGW")])
-central_south = SearchNode("MUC", [SearchNode("FCO")])
-iberia = SearchNode("MAD", [SearchNode("BCN")])
-west_europe = SearchNode("CDG", [northwest_hubs, british_isles, central_south, iberia])
-east_europe = SearchNode("IST", [SearchNode("DME")])
+south_america = SearchNode("GRU", [SearchNode("GRU")])
 
-europe = SearchNode("LHR", [east_europe, west_europe])
+china_east = SearchNode("PVG", [SearchNode("PVG"), SearchNode("PEK"), SearchNode("SHA")])
+china_southwest = SearchNode("CAN", [SearchNode("CAN"), SearchNode("SZX"), SearchNode("CTU"), SearchNode("KMG")])
+north_asia = SearchNode("HND", [SearchNode("HND"), SearchNode("NRT"), SearchNode("ICN")])
+greater_china = SearchNode("HKG", [SearchNode("HKG"), SearchNode("TPE")])
+south_asia = SearchNode("DEL", [SearchNode("DEL"), SearchNode("BOM")])
 
-search_root = SearchNode("IST", [middle_east, north_america, south_america, asia_pacific, europe])
+china = SearchNode("PVG", [SearchNode("PVG"), china_east, china_southwest, north_asia, greater_china, south_asia])
+south_east_asia = SearchNode("SIN", [SearchNode("SIN"), SearchNode("KUL"), SearchNode("BKK"), SearchNode("MNL"), SearchNode("CGK")])
+oceania = SearchNode("SYD", [SearchNode("SYD"), SearchNode("MEL")])
+
+asia_pacific = SearchNode("HKG", [SearchNode("HKG"), china, south_east_asia, oceania])
+
+northwest_hubs = SearchNode("CDG", [SearchNode("CDG"), SearchNode("AMS"), SearchNode("FRA")])
+british_isles = SearchNode("LHR", [SearchNode("LHR"), SearchNode("LGW")])
+central_south_eu = SearchNode("MUC", [SearchNode("MUC"), SearchNode("FCO")])
+iberia = SearchNode("MAD", [SearchNode("MAD"), SearchNode("BCN")])
+
+west_europe = SearchNode("CDG", [SearchNode("CDG"), northwest_hubs, british_isles, central_south_eu, iberia])
+east_europe = SearchNode("IST", [SearchNode("IST"), SearchNode("DME")])
+
+europe = SearchNode("LHR", [SearchNode("LHR"), east_europe, west_europe])
+
+search_root = SearchNode("IST", [SearchNode("IST"), middle_east, north_america, south_america, asia_pacific, europe])
+
 
 def evaluate_naive_atAirport(
 
