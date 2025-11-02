@@ -167,7 +167,7 @@ def plan():
     # evaluate_naive_atOffice only uses days for duration; keep hours separately
     duration_days = int(duration.get("days", 0)) + duration.get("hours", 0) / 24.0
 
-    meeting_stats, meeting_stats_by_office = {}
+    meeting_stats, meeting_stats_by_office = {}, {}
 
     # call the existing function to pick flights
     try:
