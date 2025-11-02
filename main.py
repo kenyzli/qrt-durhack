@@ -441,7 +441,7 @@ def evaluate_naive_atOffice(
         event_span_end = event_end + timedelta(hours=mx)
 
         co2_value = float(total_co2)
-        total_score = 0.5 * fairness + 0.5 * co2_value
+        total_score = 0.5 * fairness + 0.5 * co2_value + 0 * tz_avg
 
         stats_by_meeting_point[meeting_point] = {
             "event_dates": {
