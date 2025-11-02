@@ -9,6 +9,7 @@ app = Flask(__name__)
 
 # Basic mapping from city names to IATA codes used by the existing functions.
 # Extend this mapping as needed for your dataset.
+
 CITY_TO_IATA = {
     "Mumbai": "BOM",
     "Shanghai": "PVG",
@@ -17,7 +18,16 @@ CITY_TO_IATA = {
     "Sydney": "SYD",
     "London": "LHR",
     "New York": "JFK",
+    "Paris": "CDG",
+    "Dubai": "DXB",
+    "Zurich": "ZRH",
+    "Geneva": "GVA",
+    "Aarhus": "AAR",
+    "Wroclaw": "WRO",
+    "Budapest": "BUD",
 }
+
+IATA_TO_CITY = {v: k for k, v in CITY_TO_IATA.items()}
 
 
 def parse_iso_z(dt_str: str) -> datetime:
@@ -89,6 +99,8 @@ def plan():
     if event_location is None:
         # fallback: pick first office code
         event_location = OFFICES[0]
+
+    event_location = IATA_TO_CITY.get(event_location, event_location)
 
     # compute attendee travel hours and co2
     per_attendee_hours = []
