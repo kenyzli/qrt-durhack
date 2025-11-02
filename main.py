@@ -510,7 +510,6 @@ def evaluate_naive_atOffice(
     window_start, # dict - year, month, day
     window_end, 
     duration_days):
-    print("DUR", duration_days)
 
     window_start = _ensure_naive(window_start)
     window_end = _ensure_naive(window_end)
