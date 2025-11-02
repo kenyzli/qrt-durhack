@@ -1,8 +1,9 @@
 import polars as pl
 import os, requests, json, re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import numpy as np
 
+from multi_leg import *
 
 # major airports from QRT offices 
 OFFICES = [
@@ -49,7 +50,7 @@ def get_flights_score(A: str, B: str,
     print("Flights:")
     print(flights.collect().columns)
     
-     Join with the emissions data on carrier and flight number, sorting on emissions
+    # Join with the emissions data on carrier and flight number, sorting on emissions
     result = (
         flights.join(
             emissions,
@@ -181,51 +182,254 @@ def get_flights_score_v2(A: str, B: str, schedules,
 # print(len(set(emissions["DEPARTURE_AIRPORT"])))
 
 def evaluate_naive_atOffice(
-    outbound_map,  # location: num coming from there
+    outbound_map,  # outbound_office: num coming from there
     window_start, # dict - year, month, day
     window_end, 
     duration_days
 ):
+
+    # find fastest that arrives beofore window_end - duration_days
+    # ^ for each possible meeting
+    # calculate cost for legs
+    # sum costs
+    # take min
     # print((window_end - window_start).days - duration_days + 1)
-    for day in range(0, (window_end - window_start).days - duration_days):
-        # each office gets a score
-        # scores = {location: -1 for location in OFFICES}
-        final_flights = {} 
-        depart_on = window_start + timedelta(days=day)
+
+    final_flights = {} 
+    depart_after = window_start + timedelta(days=2)
+    arrive_before = window_end + timedelta(days=-duration_days)
+
+    # gather all csv in window - 2 to window-duration_days
+    schedule_start = window_start - timedelta(days=2)
+    schedule_end = arrive_before
+
+    schedule_scans = []
+    cur = schedule_start
+    while cur <= schedule_end:
         schedule_file = (
-        f"/opt/durhack/schedules/{depart_on.year}/"
-        f"{depart_on.month:02d}/{depart_on.day:02d}.csv"
-        )   
-        schedules = pl.scan_csv(schedule_file, infer_schema_length=10000)
-        
-        # for each possible arrival day, what is the score? 
-        # should be optimised. 
-        for cur_office in OFFICES:
-            cur_score_variance = -1
-            flights = {}
-            for out_from, n_out in outbound_map.items(): 
-                print("doing", out_from, "to", cur_office)
-                if out_from == cur_office:
-                    continue
-                res = dict(get_flights_score_v2(
-                    out_from, 
-                    cur_office, 
-                    schedules,
-                    lambda a, b: a*b
-                ))
-                if res["FLTNO"]:
-                    flights[out_from] = res
-                    flights[out_from]["FLIGHT_SCORE"] *= outbound_map[out_from] # multiply by number of people
-                        
-            # if total score from co2 and fairness is better: 
-            var =  np.var([f["FLIGHT_SCORE"][0] for f in flights.values()])
-            if (cur_score_variance == -1 or cur_score_variance > var):
-                cur_score_variance = var
-                final_flights = flights
-        
-        return final_flights # they will be the final flights to take
+            f"/opt/durhack/schedules/{cur.year}/"
+            f"{cur.month:02d}/{cur.day:02d}.csv"
+        )
+        if os.path.exists(schedule_file):
+            schedule_scans.append(pl.scan_csv(schedule_file, infer_schema_length=10000))
+        else:
+            print(f"Warning: missing schedule file for {cur.date()} at {schedule_file}")
+        cur += timedelta(days=1)
 
+    if not schedule_scans:
+        raise FileNotFoundError(
+            f"No schedule files found between {schedule_start.date()} and {schedule_end.date()}"
+        )
 
+    schedules = (
+        pl.concat(schedule_scans) if len(schedule_scans) > 1 else schedule_scans[0]
+    )
+
+    schedule_cols = [
+        "FLIGHT_DATE",
+        "DEPAPT",
+        "ARRAPT",
+        "DEPTIM",
+        "ARRTIM",
+        "ARRDAY",
+        "CARRIER",
+        "FLTNO",
+        "TOTAL_SEATS",
+        "ELPTIM",
+        "DEPCITY",
+        "ARRCITY",
+        "INTAPT",
+    ]
+
+    emissions_cols = [
+        "CARRIER_CODE",
+        "FLIGHT_NUMBER",
+        "DEPARTURE_AIRPORT",
+        "ARRIVAL_AIRPORT",
+        "ESTIMATED_CO2_TOTAL_TONNES",
+        "SEATS",
+    ]
+
+    df = (
+        schedules
+        .select(schedule_cols)
+        .with_columns(
+            pl.col("FLTNO").cast(pl.Utf8),
+            pl.col("CARRIER").cast(pl.Utf8),
+            pl.col("DEPAPT").cast(pl.Utf8),
+            pl.col("ARRAPT").cast(pl.Utf8),
+        )
+        .join(
+            emissions.select(emissions_cols).with_columns(
+                pl.col("FLIGHT_NUMBER").cast(pl.Utf8),
+                pl.col("CARRIER_CODE").cast(pl.Utf8),
+                pl.col("DEPARTURE_AIRPORT").cast(pl.Utf8),
+                pl.col("ARRIVAL_AIRPORT").cast(pl.Utf8),
+            ),
+            left_on=["CARRIER", "FLTNO", "DEPAPT", "ARRAPT"],
+            right_on=["CARRIER_CODE", "FLIGHT_NUMBER", "DEPARTURE_AIRPORT", "ARRIVAL_AIRPORT"],
+            how="left",
+        )
+        .with_columns(
+            pl.coalesce(
+                [
+                    pl.col("TOTAL_SEATS").cast(pl.Float64),
+                    pl.col("SEATS").cast(pl.Float64),
+                ]
+            ).alias("_seat_capacity")
+        )
+        .with_columns(
+            pl.when(
+                (pl.col("ESTIMATED_CO2_TOTAL_TONNES").is_not_null())
+                & (pl.col("_seat_capacity").is_not_null())
+                & (pl.col("_seat_capacity") > 0)
+            )
+            .then(pl.col("ESTIMATED_CO2_TOTAL_TONNES") / pl.col("_seat_capacity"))
+            .otherwise(None)
+            .alias("ESTIMATED_CO2_PER_CAPITA")
+        )
+        .drop("_seat_capacity")
+        .collect()
+    )
+
+    df_ts = with_connection_timestamps(df)
+
+    stats_by_meeting_point = {}
+    stats_by_meeting_point_by_office = {}
+
+    def _to_iso_z(dt):
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    for meeting_point in OFFICES:
+        attendee_hours_by_office = {}
+        co2_by_office = {}
+        stats_by_meeting_point_by_office[meeting_point] = {
+            "attendee_travel_hours": attendee_hours_by_office,
+            "attendee_co2": co2_by_office,
+        }
+
+        per_attendee_hours = []
+        arrival_times = []
+        total_co2 = 0.0
+        all_routes_found = True
+
+        for outbound_office, num in outbound_map.items():
+            itinerary, eta = csa_fastest_route(
+                df_ts,
+                outbound_office,
+                meeting_point,
+                earliest_departure=depart_after,
+                latest_arrival=arrive_before,
+                min_connection=timedelta(minutes=30),   # set connection buffer
+                min_origin_buffer=timedelta(minutes=0),
+            )
+
+            if not itinerary or eta is None:
+                print(f"❌ No valid route from {outbound_office} to {meeting_point} before {arrive_before}")
+                all_routes_found = False
+                break
+
+            journey_time = itinerary_travel_time(itinerary)
+            if journey_time is None:
+                print(f"⚠️ Unable to determine journey time for {outbound_office} → {meeting_point}")
+                all_routes_found = False
+                break
+
+            hours = journey_time.total_seconds() / 3600
+            attendee_hours_by_office[outbound_office] = round(hours, 2)
+            per_attendee_hours.extend([hours] * num)
+            arrival_times.extend([eta] * num)
+
+            route_co2_per_capita = 0.0
+            for leg in itinerary:
+                leg_co2 = leg.get("ESTIMATED_CO2_PER_CAPITA")
+                if leg_co2 in (None, ""):
+                    total_tonnes = leg.get("ESTIMATED_CO2_TOTAL_TONNES")
+                    seats = leg.get("TOTAL_SEATS") or leg.get("SEATS")
+                    try:
+                        if total_tonnes is not None and seats not in (None, 0):
+                            leg_co2 = float(total_tonnes) / float(seats)
+                        else:
+                            leg_co2 = 0.0
+                    except Exception:
+                        leg_co2 = 0.0
+                try:
+                    route_co2_per_capita += float(leg_co2)
+                except Exception:
+                    route_co2_per_capita += 0.0
+            total_co2 += route_co2_per_capita * num
+            co2_by_office[outbound_office] = {
+                "per_attendee": round(route_co2_per_capita, 3),
+                "total": round(route_co2_per_capita * num, 3),
+            }
+
+            print(f"✅ Fastest route {outbound_office} → {meeting_point}, ETA {eta}")
+            for i, leg in enumerate(itinerary, 1):
+                dep = leg["dep_ts"].strftime("%Y-%m-%d %H:%M")
+                arr = leg["arr_ts"].strftime("%Y-%m-%d %H:%M")
+                print(f"{i:02d}. {leg['DEPAPT']} → {leg['ARRAPT']}  {dep} → {arr}")
+            print(f"Total travel time from {outbound_office}: {journey_time} (~{hours:.2f} hours)")
+
+        for outbound_office in outbound_map:
+            co2_by_office.setdefault(
+                outbound_office,
+                {"per_attendee": 0.0, "total": 0.0},
+            )
+            attendee_hours_by_office.setdefault(outbound_office, 0.0)
+
+        if not all_routes_found or not per_attendee_hours or not arrival_times:
+            stats_by_meeting_point[meeting_point] = {
+                "event_dates": {"start": None, "end": None},
+                "event_span": {"start": None, "end": None},
+                "total_co2": 0.0,
+                "average_travel_hours": 0.0,
+                "median_travel_hours": 0.0,
+                "max_travel_hours": 0.0,
+                "min_travel_hours": 0.0,
+                "fairness": 0.0,
+                "total_score": 0.0,
+            }
+            continue
+
+        avg = float(np.mean(per_attendee_hours))
+        med = float(np.median(per_attendee_hours))
+        mx = float(np.max(per_attendee_hours))
+        mn = float(np.min(per_attendee_hours))
+        fairness = float(np.var(per_attendee_hours)) if len(per_attendee_hours) > 1 else 0.0
+
+        latest_arrival = max(arrival_times)
+        earliest_arrival = min(arrival_times)
+        event_start = latest_arrival
+        event_end = event_start + timedelta(days=max(duration_days, 0))
+        event_span_start = earliest_arrival
+        event_span_end = event_end + timedelta(hours=mx)
+
+        co2_value = float(total_co2)
+        total_score = 0.5 * fairness + 0.5 * co2_value
+
+        stats_by_meeting_point[meeting_point] = {
+            "event_dates": {
+                "start": _to_iso_z(event_start),
+                "end": _to_iso_z(event_end),
+            },
+            "event_span": {
+                "start": _to_iso_z(event_span_start),
+                "end": _to_iso_z(event_span_end),
+            },
+            "total_co2": round(co2_value, 3),
+            "average_travel_hours": round(avg, 2),
+            "median_travel_hours": round(med, 2),
+            "max_travel_hours": round(mx, 2),
+            "min_travel_hours": round(mn, 2),
+            "fairness": round(fairness, 4),
+            "total_score": round(total_score, 3),
+        }
+
+    return stats_by_meeting_point, stats_by_meeting_point_by_office
 
     
 outbound_map = {
@@ -248,7 +452,7 @@ schedules = pl.scan_csv(schedule_file, infer_schema_length=10000)
 
 
 print(evaluate_naive_atOffice(
-    outbound_map,  # location: num coming from there
+    outbound_map,  # outbound_office: num coming from there
     window_start, # dict - year, month, day
     window_end, 
     0

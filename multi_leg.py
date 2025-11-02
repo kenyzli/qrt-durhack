@@ -36,6 +36,7 @@ def with_connection_timestamps(df: pl.DataFrame) -> pl.DataFrame:
       - DEPTIM (int HHMM)
       - ARRTIM (int HHMM)
       - ARRDAY (str marker: 'P', '1', '2', ... or empty)
+      - CARRIER (str), FLTNO (str/int)
     Output:
       - Adds dep_ts (Datetime), arr_ts (Datetime), keeps originals.
     """
@@ -79,17 +80,17 @@ def with_connection_timestamps(df: pl.DataFrame) -> pl.DataFrame:
 
 class Connection(Tuple):
     __slots__ = ()
-    # Just documenting structure:
-    # (dep_ts, arr_ts, dep_airport, arr_airport, row_idx)
+    # Structure:
+    # (dep_ts, arr_ts, dep_airport, arr_airport, carrier, flight_number, row_idx)
 
-def build_connections(df: pl.DataFrame) -> List[Tuple[datetime, datetime, str, str, int]]:
+def build_connections(df: pl.DataFrame) -> List[Tuple[datetime, datetime, str, str, Optional[str], Optional[str], int]]:
     """
     Convert to a list of connections sorted by departure time.
-    Each connection is a tuple: (dep_ts, arr_ts, dep_airport, arr_airport, row_idx)
+    Each connection is a tuple: (dep_ts, arr_ts, dep_airport, arr_airport, carrier, flight_number, row_idx)
     """
     # Select only the needed columns to minimize Python overhead
     slim = df.select(
-        "dep_ts", "arr_ts", "DEPAPT", "ARRAPT"
+        "dep_ts", "arr_ts", "DEPAPT", "ARRAPT", "CARRIER", "FLTNO"
     ).with_row_index(name="__row_idx__")
 
     # Bring to Python lists (fast; avoids per-row .to_dict cost)
@@ -97,11 +98,23 @@ def build_connections(df: pl.DataFrame) -> List[Tuple[datetime, datetime, str, s
     arr_ts = slim["arr_ts"].to_list()
     dep_ap = slim["DEPAPT"].to_list()
     arr_ap = slim["ARRAPT"].to_list()
+    carriers = slim["CARRIER"].to_list()
+    flight_numbers = slim["FLTNO"].to_list()
     idxs   = slim["__row_idx__"].to_list()
 
-    conns = list(zip(dep_ts, arr_ts, dep_ap, arr_ap, idxs))
+    conns = list(zip(dep_ts, arr_ts, dep_ap, arr_ap, carriers, flight_numbers, idxs))
     conns.sort(key=lambda x: x[0])  # sort by departure time
     return conns
+
+def itinerary_travel_time(itinerary: List[Dict]) -> Optional[timedelta]:
+    """
+    Compute total journey time for an itinerary using the first departure and final arrival.
+    """
+    if not itinerary:
+        return None
+    first_departure = itinerary[0]["dep_ts"]
+    final_arrival = itinerary[-1]["arr_ts"]
+    return final_arrival - first_departure
 
 def csa_fastest_route(
     df: pl.DataFrame,
@@ -146,10 +159,10 @@ def csa_fastest_route(
 
     # Predecessors for path reconstruction: for each airport, remember the connection that improved it
     # pred[airport] = (prev_airport, connection_tuple)
-    pred: Dict[str, Tuple[str, Tuple[datetime, datetime, str, str, int]]] = {}
+    pred: Dict[str, Tuple[str, Tuple[datetime, datetime, str, str, Optional[str], Optional[str], int]]] = {}
 
     # Scan
-    for dep_ts, arr_ts, u, v, row_idx in conns:
+    for dep_ts, arr_ts, u, v, carrier, flight_number, row_idx in conns:
         # Skip too-early departures or already too-late arrivals
         if dep_ts < earliest_departure - min_origin_buffer:
             continue
@@ -173,14 +186,14 @@ def csa_fastest_route(
             earliest[v] = arr_ts
             # After arriving at v at arr_ts, the earliest time we can depart from v is arr_ts + min_connection
             available_from[v] = arr_ts + min_connection
-            pred[v] = (u, (dep_ts, arr_ts, u, v, row_idx))
+            pred[v] = (u, (dep_ts, arr_ts, u, v, carrier, flight_number, row_idx))
 
     # If destination never improved within cutoff
     if (destination not in earliest) or (earliest[destination] > latest_arrival):
         return None, None
 
     # Reconstruct path
-    path: List[Tuple[datetime, datetime, str, str, int]] = []
+    path: List[Tuple[datetime, datetime, str, str, Optional[str], Optional[str], int]] = []
     a = destination
     while a != origin:
         if a not in pred:
@@ -193,12 +206,14 @@ def csa_fastest_route(
 
     # Provide a clean, user-friendly itinerary, including original DataFrame row index
     itinerary = []
-    for dep_ts, arr_ts, u, v, row_idx in path:
+    for dep_ts, arr_ts, u, v, carrier, flight_number, row_idx in path:
         r = df.row(row_idx, named=True) if 0 <= row_idx < df.height else None
         itinerary.append({
             "row_idx": row_idx,
             "DEPAPT": u,
             "ARRAPT": v,
+            "CARRIER": carrier,
+            "FLTNO": flight_number,
             "dep_ts": dep_ts,
             "arr_ts": arr_ts,
             # echo some raw fields back if wanted and available
@@ -206,6 +221,9 @@ def csa_fastest_route(
             "DEPTIM": r.get("DEPTIM") if r else None,
             "ARRTIM": r.get("ARRTIM") if r else None,
             "ARRDAY": r.get("ARRDAY") if r else None,
+            "TOTAL_SEATS": r.get("TOTAL_SEATS") if r else None,
+            "ESTIMATED_CO2_TOTAL_TONNES": r.get("ESTIMATED_CO2_TOTAL_TONNES") if r else None,
+            "ESTIMATED_CO2_PER_CAPITA": r.get("ESTIMATED_CO2_PER_CAPITA") if r else None,
         })
 
     return itinerary, earliest[destination]
@@ -217,7 +235,7 @@ emissions_file = "emissions.csv"  # keep if you’ll enrich later
 
 schedules = pl.scan_csv(schedule_file, infer_schema_length=10000)
 emissions = pl.scan_csv(emissions_file, infer_schema_length=10000)
-cols = ["FLIGHT_DATE", "DEPAPT", "ARRAPT", "DEPTIM", "ARRTIM", "ARRDAY"]
+cols = ["FLIGHT_DATE", "DEPAPT", "ARRAPT", "DEPTIM", "ARRTIM", "ARRDAY", "CARRIER", "FLTNO"]
 
 df = (
     schedules
@@ -264,9 +282,19 @@ itinerary, eta = csa_fastest_route(
 
 if itinerary:
     print(f"✅ Fastest route {origin} → {destination}, ETA {eta}")
+    total_travel_time = itinerary_travel_time(itinerary)
     for i, leg in enumerate(itinerary, 1):
         dep = leg['dep_ts'].strftime("%Y-%m-%d %H:%M")
         arr = leg['arr_ts'].strftime("%Y-%m-%d %H:%M")
-        print(f"{i:02d}. {leg['DEPAPT']} → {leg['ARRAPT']}  {dep} → {arr}")
+        carrier = (leg.get("CARRIER") or "").strip()
+        flight_no = str(leg.get("FLTNO") or "").strip()
+        if carrier and flight_no:
+            flight_label = f"{carrier} {flight_no}"
+        else:
+            flight_label = carrier or flight_no or "Unknown flight"
+        print(f"{i:02d}. {leg['DEPAPT']} → {leg['ARRAPT']}  {dep} → {arr}  ({flight_label})")
+    if total_travel_time is not None:
+        hours = total_travel_time.total_seconds() / 3600
+        print(f"Total travel time from {origin}: {total_travel_time} (~{hours:.2f} hours)")
 else:
     print(f"❌ No valid route from {origin} to {destination} before {t_deadline}")
