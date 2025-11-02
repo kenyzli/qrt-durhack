@@ -122,7 +122,8 @@ def evaluate_naive_atOffice(
     schedules = schedules.filter(
         pl.col("FLIGHT_DATE")
         .str.strptime(pl.Date, "%Y-%m-%d", strict=False)
-        .is_between(flight_date_start, flight_date_end, closed="both")
+        .is_between(flight_date_start, flight_date_end, closed="both") &
+        pl.col('GHOST').is_not_null
     )
 
     schedule_cols = [
