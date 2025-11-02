@@ -25,6 +25,9 @@ OFFICES = [
 
 emissions_file = "/opt/durhack/emissions.csv"
 emissions = pl.scan_csv(emissions_file, infer_schema_length=10000)
+SCHEDULE_SCHEMA_OVERRIDES = {
+    "ARRDAY": pl.Utf8,
+}
 
 def get_flights_score(A: str, B: str, 
                       depart_on: datetime,
@@ -34,7 +37,21 @@ def get_flights_score(A: str, B: str,
     f"/opt/durhack/schedules/{depart_on.year}/"
     f"{depart_on.month:02d}/{depart_on.day:02d}.csv"
     )   
-    schedules = pl.scan_csv(schedule_file, infer_schema_length=0).collect()
+    schedules = (
+        pl.scan_csv(
+            schedule_file,
+            infer_schema_length=0,
+            schema_overrides=SCHEDULE_SCHEMA_OVERRIDES,
+        )
+        .with_columns(
+            pl.col("ARRDAY").cast(pl.Utf8, strict=False),
+            pl.col("CARRIER").cast(pl.Utf8, strict=False),
+            pl.col("FLTNO").cast(pl.Utf8, strict=False),
+            pl.col("DEPAPT").cast(pl.Utf8, strict=False),
+            pl.col("ARRAPT").cast(pl.Utf8, strict=False),
+        )
+        .collect()
+    )
     #
     # print(pl.DataFrame.collect_schema(schedules)) # TOTAL_SEATS - total seats column
     # print(pl.DataFrame.collect_schema(emissions)) # ESTIMATED_CO2_TOTAL_TONNES
@@ -211,7 +228,20 @@ def evaluate_naive_atOffice(
             f"{cur.month:02d}/{cur.day:02d}.csv"
         )
         if os.path.exists(schedule_file):
-            schedule_scans.append(pl.scan_csv(schedule_file, infer_schema_length=10000))
+            schedule_scans.append(
+                pl.scan_csv(
+                    schedule_file,
+                    infer_schema_length=10000,
+                    schema_overrides=SCHEDULE_SCHEMA_OVERRIDES,
+                )
+                .with_columns(
+                    pl.col("ARRDAY").cast(pl.Utf8, strict=False),
+                    pl.col("CARRIER").cast(pl.Utf8, strict=False),
+                    pl.col("FLTNO").cast(pl.Utf8, strict=False),
+                    pl.col("DEPAPT").cast(pl.Utf8, strict=False),
+                    pl.col("ARRAPT").cast(pl.Utf8, strict=False),
+                )
+            )
         else:
             print(f"Warning: missing schedule file for {cur.date()} at {schedule_file}")
         cur += timedelta(days=1)
@@ -439,17 +469,6 @@ outbound_map = {
 
 window_start = datetime(2024, 1, 20)
 window_end = datetime(2024, 1, 25)
-
-depart_on = window_start
-schedule_file = (
-    f"/opt/durhack/schedules/{depart_on.year}/"
-    f"{depart_on.month:02d}/{depart_on.day:02d}.csv"
-)   
-schedules = pl.scan_csv(schedule_file, infer_schema_length=10000)
-
-# print(get_flights_score_v2("BOM", "LHR", schedules, lambda a, b: a*b))
-# print(get_flights_score("BOM","UAE", window_start, lambda a, b: a*b))
-
 
 print(evaluate_naive_atOffice(
     outbound_map,  # outbound_office: num coming from there
