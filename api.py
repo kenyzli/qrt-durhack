@@ -1,7 +1,10 @@
 from flask import Flask, request, jsonify
 from datetime import datetime, timedelta, timezone
+import json
 import math
+import os
 import numpy as np
+import google.generativeai as genai
 
 from main import evaluate_naive_atOffice, OFFICES
 
@@ -28,6 +31,102 @@ CITY_TO_IATA = {
 }
 
 IATA_TO_CITY = {v: k for k, v in CITY_TO_IATA.items()}
+
+GEMINI_MODEL_NAME = "gemma-3n-e2b-it"
+DEFAULT_GEMINI_PROMPT = (
+    "You are an expert travel coordinator. Using ONLY the data in the JSON below, "
+    "write a concise executive summary that explains the trade-offs and gives a brief snapshot of the destination.\n\n"
+    "OUTPUT REQUIREMENTS\n"
+    "- Max 180 words.\n"
+    "- Plain English, scannable bullets.\n"
+    "- Do NOT invent numbers or facts not present in the JSON. Use values exactly as given.\n"
+    "- You may rank or compare cities using the provided travel hours, but do not compute percentages.\n"
+    "- If something isn't in the JSON, omit it (don't guess).\n\n"
+    "COVER EXACTLY THESE SECTIONS\n\n"
+    "1) When & Where\n"
+    "- Event location and the event date range (use the ISO strings as-is).\n\n"
+    "2) Destination Snapshot\n"
+    "- 2-3 high-level, generic points about the location (e.g., major hub status, infrastructure, accessibility). "
+    "Avoid weather, visas, or speculative info. Keep it qualitative and factual.\n\n"
+    "3) Travel Burden & Fairness\n"
+    "- State average, median, min, and max travel hours.\n"
+    "- Name up to 2 longest-haul origins and up to 2 shortest-haul origins (from attendee_travel_hours), with hours.\n\n"
+    "4) Carbon Impact\n"
+    "- Report total_co2 from the JSON.\n"
+    "- Briefly note how travel time distribution might relate to emissions (qualitative only).\n\n"
+    "5) Key Trade-offs (3 bullets)\n"
+    "- Balance of fairness (who travels most/least), total time, and carbon.\n"
+    "- Mention any notable outliers or risks (e.g., very long itineraries).\n"
+)
+
+# _gemini_model = None
+
+
+# class GeminiSummaryConfigurationError(RuntimeError):
+#     """Raised when Gemini is not configured correctly."""
+
+
+# def _get_gemini_model():
+#     global _gemini_model
+#     api_key = os.environ.get("GOOGLE_API_KEY")
+#     if not api_key:
+#         raise GeminiSummaryConfigurationError("GOOGLE_API_KEY is not set")
+#     # Configure once and reuse the GenerativeModel instance.
+#     genai.configure(api_key=api_key)
+#     if _gemini_model is None:
+#         _gemini_model = genai.GenerativeModel(GEMINI_MODEL_NAME)
+#     return _gemini_model
+
+
+# def generate_gemini_summary(result_payload, prompt_override=None):
+#     prompt = prompt_override or DEFAULT_GEMINI_PROMPT
+#     payload_json = json.dumps(result_payload, default=str)
+#     prompt_text = f"{prompt}\n\nJSON:\n{payload_json}"
+
+#     model = _get_gemini_model()
+
+#     response = model.generate_content(prompt_text)
+#     summary_text = getattr(response, "text", None) or str(response)
+#     return summary_text
+
+
+# @app.route("/gemini_summary", methods=["POST"])
+# def gemini_summary():
+#     """
+#     Expects JSON body:
+#       {
+#         "result": { ... your /plan result ... },
+#         "prompt": "optional custom prompt"
+#       }
+
+#     Returns:
+#       {
+#         "summary": "Gemini-generated text summary",
+#       }
+#     """
+#     data = request.get_json()
+#     if not data or "result" not in data:
+#         return jsonify({"error": "missing 'result' field"}), 400
+
+#     result = data["result"]
+#     prompt_override = data.get("prompt")
+
+#     try:
+#         summary_text = generate_gemini_summary(result, prompt_override=prompt_override)
+#     except GeminiSummaryConfigurationError as exc:
+#         return jsonify({
+#             "error": "missing_api_key",
+#             "detail": str(exc),
+#         }), 500
+#     except Exception as exc:  # pragma: no cover - passes through backend error detail
+#         return jsonify({
+#             "error": "gemini_request_failed",
+#             "detail": str(exc),
+#         }), 500
+
+#     return jsonify({
+#         "summary": summary_text
+#     })
 
 
 def parse_iso_z(dt_str: str) -> datetime:
@@ -98,59 +197,85 @@ def plan():
             priority = len(OFFICES)
         return (score, priority, mp)
 
-    best_meeting_point, best_stats = min(viable_meeting_points, key=_score_key)
+    sorted_meeting_points = sorted(viable_meeting_points, key=_score_key)
 
-    per_office_stats = meeting_stats_by_office.get(best_meeting_point, {})
-    attendee_hours_by_office = per_office_stats.get("attendee_travel_hours", {}) or {}
-    attendee_co2_by_office = per_office_stats.get("attendee_co2", {}) or {}
-
-    # Map attendee_travel_hours keys back to city names if possible
     iata_to_city = {v: k for k, v in CITY_TO_IATA.items()}
 
-    attendee_travel_hours_named = {}
-    for iata, hrs in attendee_hours_by_office.items():
-        name = iata_to_city.get(iata, iata)
-        try:
-            attendee_travel_hours_named[name] = round(float(hrs), 2)
-        except Exception:
-            attendee_travel_hours_named[name] = hrs
+    # gemini_summary_enabled = True
+    # gemini_setup_error = None
+    # try:
+    #     _get_gemini_model()
+    # except Exception as exc:
+    #     gemini_summary_enabled = False
+    #     gemini_setup_error = str(exc)
 
-    attendee_co2_named = {}
-    for iata, metrics in attendee_co2_by_office.items():
-        name = iata_to_city.get(iata, iata)
-        attendee_co2_named[name] = metrics
+    meeting_options = []
+    for meeting_point, stats in sorted_meeting_points:
+        per_office_stats = meeting_stats_by_office.get(meeting_point, {})
+        attendee_hours_by_office = per_office_stats.get("attendee_travel_hours", {}) or {}
+        attendee_co2_by_office = per_office_stats.get("attendee_co2", {}) or {}
+        attendee_routes_by_office = per_office_stats.get("attendee_routes", {}) or {}
 
-    event_location_code = best_meeting_point
-    event_location = IATA_TO_CITY.get(event_location_code, event_location_code)
+        attendee_travel_hours_named = {}
+        for iata, hrs in attendee_hours_by_office.items():
+            name = iata_to_city.get(iata, iata)
+            try:
+                attendee_travel_hours_named[name] = round(float(hrs), 2)
+            except Exception:
+                attendee_travel_hours_named[name] = hrs
+        
+        attendee_routes_named = {}
+        for iata, route_nodes in attendee_routes_by_office.items():
+            name = iata_to_city.get(iata, iata)
+            attendee_routes_named[name] = route_nodes
 
-    avg = best_stats.get("average_travel_hours", 0.0)
-    med = best_stats.get("median_travel_hours", 0.0)
-    mx = best_stats.get("max_travel_hours", 0.0)
-    mn = best_stats.get("min_travel_hours", 0.0)
+        attendee_co2_named = {}
+        for iata, metrics in attendee_co2_by_office.items():
+            name = iata_to_city.get(iata, iata)
+            attendee_co2_named[name] = metrics
 
-    result = {
-        "event_location": event_location,
-        "meeting_point_iata": event_location_code,
-        "event_dates": {
-            "start": best_stats.get("event_dates", {}).get("start"),
-            "end": best_stats.get("event_dates", {}).get("end"),
-        },
-        "event_span": {
-            "start": best_stats.get("event_span", {}).get("start"),
-            "end": best_stats.get("event_span", {}).get("end"),
-        },
-        "total_co2": best_stats.get("total_co2", 0.0),
-        "average_travel_hours": avg,
-        "median_travel_hours": med,
-        "max_travel_hours": mx,
-        "min_travel_hours": mn,
-        "fairness": best_stats.get("fairness"),
-        "total_score": best_stats.get("total_score"),
-        "attendee_travel_hours": attendee_travel_hours_named,
-        "attendee_co2": attendee_co2_named,
-    }
+        event_location = IATA_TO_CITY.get(meeting_point, meeting_point)
 
-    return jsonify(result)
+        option = {
+            "event_location": event_location,
+            "meeting_point_iata": meeting_point,
+            "event_dates": {
+                "start": stats.get("event_dates", {}).get("start"),
+                "end": stats.get("event_dates", {}).get("end"),
+            },
+            "event_span": {
+                "start": stats.get("event_span", {}).get("start"),
+                "end": stats.get("event_span", {}).get("end"),
+            },
+            "total_co2": stats.get("total_co2", 0.0),
+            "average_travel_hours": stats.get("average_travel_hours", 0.0),
+            "median_travel_hours": stats.get("median_travel_hours", 0.0),
+            "max_travel_hours": stats.get("max_travel_hours", 0.0),
+            "min_travel_hours": stats.get("min_travel_hours", 0.0),
+            "fairness": stats.get("fairness"),
+            "total_score": stats.get("total_score"),
+            "attendee_travel_hours": attendee_travel_hours_named,
+            "attendee_co2": attendee_co2_named,
+            "attendee_routes": attendee_routes_named,
+        }
+
+        # summary_text = None
+        # summary_error = None
+        # if gemini_summary_enabled:
+        #     try:
+        #         summary_text = generate_gemini_summary(option)
+        #     except Exception as exc:
+        #         summary_error = str(exc)
+        # else:
+        #     summary_error = gemini_setup_error
+
+        # option["gemini_summary"] = summary_text
+        # if summary_error:
+            # option["gemini_summary_error"] = summary_error
+
+        meeting_options.append(option)
+
+    return jsonify(meeting_options)
 
 
 if __name__ == "__main__":

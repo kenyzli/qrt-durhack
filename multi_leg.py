@@ -6,59 +6,30 @@ from typing import Optional, List, Dict, Tuple, Iterable
 import time
 import weakref
 
-# ---------- Timestamp helpers for OAG-like HHMM + ARRDAY ----------
-
-def _hhmm_duration_expr(column: str) -> pl.Expr:
-    """Return a duration expression representing HHMM values stored as integers."""
-    base = pl.col(column).cast(pl.Int64)
-    return pl.duration(hours=(base // 100), minutes=(base % 100))
+def _parse_utc_datetime(column: str) -> pl.Expr:
+    """Parse a UTC timestamp column into a Polars Datetime (naive UTC)."""
+    return (
+        pl.col(column)
+        .cast(pl.Utf8, strict=False)
+        .str.strip_chars()
+        .str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S%.f", strict=False)
+    )
 
 def with_connection_timestamps(df: pl.DataFrame) -> pl.DataFrame:
     """
     Input columns (strings/ints as specified):
-      - DEPAPT (str), ARRAPT (str)
-      - FLIGHT_DATE (YYYY-MM-DD str)
-      - DEPTIM (int HHMM)
-      - ARRTIM (int HHMM)
-      - ARRDAY (str marker: 'P', '1', '2', ... or empty)
-      - CARRIER (str), FLTNO (str/int)
+      - SCHEDULED_DEPARTURE_DATE_TIME_UTC (str/datetime)
+      - SCHEDULED_ARRIVAL_DATE_TIME_UTC (str/datetime)
+      - Additional schedule metadata is preserved untouched.
     Output:
-      - Adds dep_ts (Datetime), arr_ts (Datetime), keeps originals.
+      - Adds dep_ts (Datetime), arr_ts (Datetime), keeping originals.
     """
-    out = (
-        df
-        .with_columns(
-            # Parse date
-            pl.col("FLIGHT_DATE").str.strptime(pl.Date, "%Y-%m-%d").alias("dep_date"),
-            # Normalize ARRDAY to integer day offset
-            pl.col("ARRDAY")
-            .cast(pl.Utf8, strict=False)
-            .fill_null("")
-            .str.strip_chars()
-            .alias("ARRDAY_norm"),
-        )
-        .with_columns(
-            # Departure timestamp = dep_date + HHMM
-            (pl.col("dep_date").cast(pl.Datetime) + _hhmm_duration_expr("DEPTIM")).alias("dep_ts"),
-            # Arrival timestamp = dep_date + day offset + HHMM
-            (
-                pl.col("dep_date").cast(pl.Datetime)
-                + pl.duration(
-                    days=(
-                        pl.when(pl.col("ARRDAY_norm") == "P")
-                        .then(pl.lit(-1))
-                        .otherwise(
-                            pl.col("ARRDAY_norm").cast(pl.Int32, strict=False)
-                        )
-                        .fill_null(0)
-                    )
-                )
-                + _hhmm_duration_expr("ARRTIM")
-            ).alias("arr_ts"),
-        )
-        .drop(["dep_date", "ARRDAY_norm"])
+    return df.with_columns(
+        [
+            _parse_utc_datetime("SCHEDULED_DEPARTURE_DATE_TIME_UTC").alias("dep_ts"),
+            _parse_utc_datetime("SCHEDULED_ARRIVAL_DATE_TIME_UTC").alias("arr_ts"),
+        ]
     )
-    return out
 
 # ---------- Connection Scan Algorithm (CSA) ----------
 
@@ -126,8 +97,9 @@ def itinerary_travel_time(itinerary: List[Dict]) -> Optional[timedelta]:
     final_arrival = itinerary[-1]["arr_ts"]
     return final_arrival - first_departure
 
+# df must already have dep_ts, arr_ts (use your with_connection_timestamps once)
 
-def csa_fastest_route(
+def fastest_leq_one_stop(
     df: pl.DataFrame,
     origin: str,
     destination: str,
@@ -135,135 +107,182 @@ def csa_fastest_route(
     latest_arrival: datetime,
     min_connection: timedelta = timedelta(minutes=30),
     min_origin_buffer: timedelta = timedelta(0),
-    focus_airports: Optional[Iterable[str]] = None,
-) -> Tuple[Optional[List[Dict]], Optional[datetime]]:
-    """
-    Single-pass Connection Scan Algorithm:
-      - Scans connections in increasing departure time
-      - Respects a minimum connection time (no MCT at origin unless you set min_origin_buffer)
-      - Returns (itinerary, arrival_time) or (None, None) if not reachable by latest_arrival
-
-    Returns `itinerary` as list of dicts with the original row index and key fields.
-    """
-    # Pre-filter to a time window to keep the scan lean:
-    # Keep connections that depart no earlier than (earliest_departure - min_origin_buffer)
-    # and arrive no later than latest_arrival.
-    t_start = time.perf_counter()
-    window = df.filter(
-        (pl.col("arr_ts") <= pl.lit(latest_arrival))
-        & (pl.col("dep_ts") >= pl.lit(earliest_departure - min_origin_buffer))
+    streaming: bool = True,
+):
+    # Keep only needed columns and add stable row index
+    cols = [
+        "DEPAPT","ARRAPT","CARRIER","FLTNO",
+        "FLIGHT_DATE","DEPTIM","ARRTIM","ARRDAY",
+        "dep_ts","arr_ts",
+    ]
+    base = (
+        df.select(cols)
+          .with_row_index("__idx")
+          .with_columns([
+              pl.col("DEPAPT","ARRAPT","CARRIER","FLTNO").cast(pl.Categorical)
+          ])
+          .lazy()
     )
-    if focus_airports:
-        focus_list = list(dict.fromkeys(focus_airports))
-        window = window.filter(
-            pl.col("DEPAPT").is_in(focus_list)
-            | pl.col("ARRAPT").is_in(focus_list)
+
+    origin_ready = earliest_departure + min_origin_buffer
+
+    # Direct option
+    direct = (
+        base
+        .filter(
+            (pl.col("DEPAPT") == origin) &
+            (pl.col("ARRAPT") == destination) &
+            (pl.col("dep_ts") >= origin_ready) &
+            (pl.col("arr_ts") <= latest_arrival)
         )
-    print(
-        f"[CSA] Filter window retained {window.height} rows "
-        f"in {time.perf_counter() - t_start:.4f}s"
+        .with_columns([
+            (pl.col("arr_ts") - pl.col("dep_ts")).alias("total_time"),
+            pl.lit(0).alias("stops"),
+            pl.lit(None, dtype=pl.Categorical).alias("via"),
+            pl.col("__idx").alias("idx1"),
+            pl.lit(None, dtype=pl.Int64).alias("idx2"),
+            pl.col("DEPAPT").alias("o"),
+            pl.col("ARRAPT").alias("d"),
+            pl.col("dep_ts").alias("dep_ts_out"),
+            pl.col("arr_ts").alias("arr_ts_in"),
+        ])
+        .select([
+            "stops","via","o","d","dep_ts_out","arr_ts_in","total_time",
+            "CARRIER","FLTNO","FLIGHT_DATE","DEPTIM","ARRTIM","ARRDAY",
+            "idx1","idx2"
+        ])
     )
 
-    if window.height == 0:
+    # One-stop: origin leg (A→K)
+    f1 = (
+        base
+        .filter(
+            (pl.col("DEPAPT") == origin) &
+            (pl.col("dep_ts") >= origin_ready) &
+            # must still allow a connection and arrive by cutoff
+            (pl.col("arr_ts") <= latest_arrival - pl.lit(min_connection))
+        )
+        .select([
+            pl.col("__idx").alias("idx1"),
+            pl.col("DEPAPT").alias("o1"),
+            pl.col("ARRAPT").alias("k"),
+            pl.col("CARRIER").alias("car1"),
+            pl.col("FLTNO").alias("flt1"),
+            "FLIGHT_DATE","DEPTIM","ARRTIM","ARRDAY",
+            pl.col("dep_ts").alias("dep1"),
+            pl.col("arr_ts").alias("arr1"),
+        ])
+    )
+
+    # One-stop: inbound leg (K→B)
+    f2 = (
+        base
+        .filter(
+            (pl.col("ARRAPT") == destination) &
+            (pl.col("arr_ts") <= latest_arrival)
+        )
+        .select([
+            pl.col("__idx").alias("idx2"),
+            pl.col("DEPAPT").alias("k2"),
+            pl.col("ARRAPT").alias("d2"),
+            pl.col("CARRIER").alias("car2"),
+            pl.col("FLTNO").alias("flt2"),
+            pl.col("dep_ts").alias("dep2"),
+            pl.col("arr_ts").alias("arr2"),
+        ])
+    )
+
+    one_stop = (
+        f1.join(f2, left_on="k", right_on="k2", how="inner")
+          .filter(pl.col("dep2") >= pl.col("arr1") + pl.lit(min_connection))
+          .with_columns([
+              (pl.col("arr2") - pl.col("dep1")).alias("total_time"),
+              pl.lit(1).alias("stops"),
+              pl.col("k").alias("via"),
+              pl.col("o1").alias("o"),
+              pl.col("d2").alias("d"),
+              pl.col("dep1").alias("dep_ts_out"),
+              pl.col("arr2").alias("arr_ts_in"),
+          ])
+          .select([
+              "stops","via","o","d","dep_ts_out","arr_ts_in","total_time",
+              # take carrier/flight numbers for both legs; keep names distinct
+              "car1","flt1","car2","flt2",
+              # optional metadata from first leg; add more if needed
+              "FLIGHT_DATE","DEPTIM","ARRTIM","ARRDAY",
+              "idx1","idx2"
+          ])
+    )
+
+    best = (
+        pl.concat([direct, one_stop], how="diagonal_relaxed")
+          .sort(["total_time","arr_ts_in"])
+          .limit(1)
+          .collect(streaming=streaming)
+    )
+
+    if best.height == 0:
         return None, None
 
-    # Build scan list
-    t_build = time.perf_counter()
-    conns = build_connections(window)
-    print(
-        f"[CSA] Built {len(conns)} connections "
-        f"in {time.perf_counter() - t_build:.4f}s"
-    )
+    row = best.row(0, named=True)
+    if row["stops"] == 0:
+        # single leg
+        leg = df.row(int(row["idx1"]), named=True)
+        itinerary = [{
+            "row_idx": int(row["idx1"]),
+            "DEPAPT": row["o"],
+            "ARRAPT": row["d"],
+            "CARRIER": leg.get("CARRIER"),
+            "FLTNO": leg.get("FLTNO"),
+            "dep_ts": row["dep_ts_out"],
+            "arr_ts": row["arr_ts_in"],
+            "FLIGHT_DATE": leg.get("FLIGHT_DATE"),
+            "DEPTIM": leg.get("DEPTIM"),
+            "ARRTIM": leg.get("ARRTIM"),
+            "ARRDAY": leg.get("ARRDAY"),
+            "ESTIMATED_CO2_PER_CAPITA": leg.get("ESTIMATED_CO2_PER_CAPITA"),
+            "ESTIMATED_CO2_TOTAL_TONNES": leg.get("ESTIMATED_CO2_TOTAL_TONNES"),
+            "SEATS": leg.get("SEATS"),
+            "TOTAL_SEATS": leg.get("TOTAL_SEATS"),
+        }]
+    else:
+        leg1 = df.row(int(row["idx1"]), named=True)
+        leg2 = df.row(int(row["idx2"]), named=True)
+        itinerary = [
+            {
+                "row_idx": int(row["idx1"]),
+                "DEPAPT": row["o"],
+                "ARRAPT": row["via"],
+                "CARRIER": leg1.get("CARRIER"),
+                "FLTNO": leg1.get("FLTNO"),
+                "dep_ts": leg1.get("dep_ts"),
+                "arr_ts": leg1.get("arr_ts"),
+                "FLIGHT_DATE": leg1.get("FLIGHT_DATE"),
+                "DEPTIM": leg1.get("DEPTIM"),
+                "ARRTIM": leg1.get("ARRTIM"),
+                "ARRDAY": leg1.get("ARRDAY"),
+                "ESTIMATED_CO2_PER_CAPITA": leg1.get("ESTIMATED_CO2_PER_CAPITA"),
+                "ESTIMATED_CO2_TOTAL_TONNES": leg1.get("ESTIMATED_CO2_TOTAL_TONNES"),
+                "SEATS": leg1.get("SEATS"),
+                "TOTAL_SEATS": leg1.get("TOTAL_SEATS"),
+            },
+            {
+                "row_idx": int(row["idx2"]),
+                "DEPAPT": row["via"],
+                "ARRAPT": row["d"],
+                "CARRIER": leg2.get("CARRIER"),
+                "FLTNO": leg2.get("FLTNO"),
+                "dep_ts": leg2.get("dep_ts"),
+                "arr_ts": leg2.get("arr_ts"),
+                "FLIGHT_DATE": leg2.get("FLIGHT_DATE"),
+                "DEPTIM": leg2.get("DEPTIM"),
+                "ARRTIM": leg2.get("ARRTIM"),
+                "ARRDAY": leg2.get("ARRDAY"),
+                "ESTIMATED_CO2_PER_CAPITA": leg2.get("ESTIMATED_CO2_PER_CAPITA"),
+                "ESTIMATED_CO2_TOTAL_TONNES": leg2.get("ESTIMATED_CO2_TOTAL_TONNES"),
+                "SEATS": leg2.get("SEATS"),
+                "TOTAL_SEATS": leg2.get("TOTAL_SEATS"),
+            },
+        ]
 
-    # Label sets: earliest known time you can be at airport a
-    earliest: Dict[str, datetime] = {}
-    # Available-from time accounting for connection slack per stop
-    available_from: Dict[str, datetime] = {}
-
-    # Initialize
-    earliest[origin] = earliest_departure
-    # You can board the first flight out of origin any time >= earliest_departure + min_origin_buffer
-    available_from[origin] = earliest_departure + min_origin_buffer
-
-    # Predecessors for path reconstruction: for each airport, remember the connection that improved it
-    # pred[airport] = (prev_airport, connection_tuple)
-    pred: Dict[str, Tuple[str, Tuple[datetime, datetime, str, str, Optional[str], Optional[str], int]]] = {}
-
-    # Scan
-    t_scan = time.perf_counter()
-    relaxations = 0
-    for dep_ts, arr_ts, u, v, carrier, flight_number, row_idx in conns:
-        # Skip too-early departures or already too-late arrivals
-        if dep_ts < earliest_departure - min_origin_buffer:
-            continue
-        if arr_ts > latest_arrival:
-            continue
-
-        # Can we be at u by dep_ts respecting MCT?
-        # At origin, use available_from[origin] (may be = earliest_departure if min_origin_buffer=0)
-        # Else require earliest[u] + min_connection
-        can_board = False
-        if u in available_from and dep_ts >= available_from[u]:
-            can_board = True
-        elif u in earliest and u != origin and dep_ts >= earliest[u] + min_connection:
-            can_board = True
-
-        if not can_board:
-            continue
-
-        # Relax arrival at v
-        if (v not in earliest) or (arr_ts < earliest[v]):
-            earliest[v] = arr_ts
-            # After arriving at v at arr_ts, the earliest time we can depart from v is arr_ts + min_connection
-            available_from[v] = arr_ts + min_connection
-            pred[v] = (u, (dep_ts, arr_ts, u, v, carrier, flight_number, row_idx))
-            relaxations += 1
-    print(
-        f"[CSA] Scan finished with {relaxations} relaxations "
-        f"in {time.perf_counter() - t_scan:.4f}s"
-    )
-
-    # If destination never improved within cutoff
-    if (destination not in earliest) or (earliest[destination] > latest_arrival):
-        return None, None
-
-    # Reconstruct path
-    t_reconstruct = time.perf_counter()
-    path: List[Tuple[datetime, datetime, str, str, Optional[str], Optional[str], int]] = []
-    a = destination
-    while a != origin:
-        if a not in pred:
-            # No chain back to origin — not reachable
-            return None, None
-        u, conn = pred[a]
-        path.append(conn)
-        a = u
-    path.reverse()
-    print(
-        f"[CSA] Path reconstruction produced {len(path)} legs "
-        f"in {time.perf_counter() - t_reconstruct:.4f}s"
-    )
-
-    # Provide a clean, user-friendly itinerary, including original DataFrame row index
-    itinerary = []
-    for dep_ts, arr_ts, u, v, carrier, flight_number, row_idx in path:
-        r = df.row(row_idx, named=True) if 0 <= row_idx < df.height else None
-        itinerary.append({
-            "row_idx": row_idx,
-            "DEPAPT": u,
-            "ARRAPT": v,
-            "CARRIER": carrier,
-            "FLTNO": flight_number,
-            "dep_ts": dep_ts,
-            "arr_ts": arr_ts,
-            # echo some raw fields back if wanted and available
-            "FLIGHT_DATE": r.get("FLIGHT_DATE") if r else None,
-            "DEPTIM": r.get("DEPTIM") if r else None,
-            "ARRTIM": r.get("ARRTIM") if r else None,
-            "ARRDAY": r.get("ARRDAY") if r else None,
-            "TOTAL_SEATS": r.get("TOTAL_SEATS") if r else None,
-            "ESTIMATED_CO2_TOTAL_TONNES": r.get("ESTIMATED_CO2_TOTAL_TONNES") if r else None,
-            "ESTIMATED_CO2_PER_CAPITA": r.get("ESTIMATED_CO2_PER_CAPITA") if r else None,
-        })
-
-    return itinerary, earliest[destination]
+    return itinerary, row["arr_ts_in"]

@@ -2,8 +2,10 @@ import polars as pl
 import os, requests, json, re
 from datetime import datetime, timedelta, timezone
 import numpy as np
+import math
 
 from multi_leg import *
+from airports import get_airport_coordinates
 
 # major airports from QRT offices 
 OFFICES = [
@@ -23,180 +25,22 @@ OFFICES = [
     "BUD"
 ]
 
-emissions_file = "/opt/durhack/emissions.csv"
-emissions = pl.scan_csv(emissions_file, infer_schema_length=10000)
-SCHEDULE_SCHEMA_OVERRIDES = {
-    "ARRDAY": pl.Utf8,
-}
 
-def get_flights_score(A: str, B: str, 
-                      depart_on: datetime,
-                      scoreFunction: callable
-                      ) -> pl.DataFrame:
-    schedule_file = (
-    f"/opt/durhack/schedules/{depart_on.year}/"
-    f"{depart_on.month:02d}/{depart_on.day:02d}.csv"
-    )   
-    schedules = (
-        pl.scan_csv(
-            schedule_file,
-            infer_schema_length=0,
-            schema_overrides=SCHEDULE_SCHEMA_OVERRIDES,
-        )
-        .with_columns(
-            pl.col("ARRDAY").cast(pl.Utf8, strict=False),
-            pl.col("CARRIER").cast(pl.Utf8, strict=False),
-            pl.col("FLTNO").cast(pl.Utf8, strict=False),
-            pl.col("DEPAPT").cast(pl.Utf8, strict=False),
-            pl.col("ARRAPT").cast(pl.Utf8, strict=False),
-        )
-        .collect()
+
+def _clean_numeric(column: str) -> pl.Expr:
+    """Return a Float64 cast for columns that may arrive as strings/padded numbers."""
+    return (
+        pl.col(column)
+        .cast(pl.Utf8, strict=False)
+        .str.strip_chars()
+        .str.replace_all(",", "")
+        .cast(pl.Float64, strict=False)
     )
-    #
-    # print(pl.DataFrame.collect_schema(schedules)) # TOTAL_SEATS - total seats column
-    # print(pl.DataFrame.collect_schema(emissions)) # ESTIMATED_CO2_TOTAL_TONNES
-    
-    # information on the columns in the data files can be found at:
-    # https://knowledge.oag.com/docs/wdf-record-layout
-    # https://knowledge.oag.com/docs/emissions-schedules-data-fields-explained
-    
-    flights = (
-        schedules.filter((pl.col("DEPAPT") == A) & (pl.col("ARRAPT") == B))
-    )
-    
-    print("Flights:")
-    print(flights.collect().columns)
-    
-    # Join with the emissions data on carrier and flight number, sorting on emissions
-    result = (
-        flights.join(
-            emissions,
-            left_on=["CARRIER", "FLTNO"],
-            right_on=["CARRIER_CODE", "FLIGHT_NUMBER"],
-            how="inner"
-        )
-        .with_columns(
-            (pl.col("ESTIMATED_CO2_TOTAL_TONNES") / pl.col("TOTAL_SEATS").cast(pl.Float64))
-            .alias("ESTIMATED_CO2_PER_CAPITA")
-        )
-        .filter(
-            pl.col("ESTIMATED_CO2_PER_CAPITA").is_not_null() & 
-            pl.col("ELPTIM").is_not_null()
-        )
-        .with_columns(
-            pl.struct(["ESTIMATED_CO2_PER_CAPITA", "ELPTIM"])
-            .map_elements(
-                lambda row: scoreFunction(row["ESTIMATED_CO2_PER_CAPITA"], row["ELPTIM"]) 
-                if row["ESTIMATED_CO2_PER_CAPITA"] is not None and row["ELPTIM"] is not None 
-                else None,
-                return_dtype=pl.Float64
-            )
-        ) 
-        .with_columns(
-            pl.struct(["ESTIMATED_CO2_PER_CAPITA", "ELPTIM"])
-            .map_elements(
-                lambda row: scoreFunction(row["ESTIMATED_CO2_PER_CAPITA"], row["ELPTIM"]),
-                return_dtype=pl.Float64
-            )
-            .alias("FLIGHT_SCORE")
-        )
-        .select([
-            pl.col("FLTNO"), 
-            pl.col("DEPCITY"),
-            pl.col("ARRCITY"),
-            
-            # pl.col("DEPAPT"),
-            # pl.col("ARRAPT"),
-            
-            pl.col("ARRTIM"),
-            pl.col("DEPTIM"),
-            pl.col("ELPTIM"),
-            # pl.col("ESTIMATED_CO2_TOTAL_TONNES"),
-            pl.col("ESTIMATED_CO2_PER_CAPITA"),
-            pl.col("FLIGHT_SCORE"),
-            pl.col("INTAPT")
-        ])
-        .sort("FLIGHT_SCORE")
-    ).collect()
-
-    return result.head(1).to_dict(as_series=False)
-
-    
-# score lower is better
-# from A to B on this date. 
-# A and B are airport codes like LHR and BOM
-def get_flights_score_v2(A: str, B: str, schedules,
-                      scoreFunction: callable
-                      ) -> pl.DataFrame:
-    
-    # information on the columns in the data files can be found at:
-    # https://knowledge.oag.com/docs/wdf-record-layout
-    # https://knowledge.oag.com/docs/emissions-schedules-data-fields-explained
-    
-    flights = (
-        schedules.filter((pl.col("DEPAPT") == A) & (pl.col("ARRAPT") == B))
-    )
-    # print("Flights:")
-    # print(flights.collect().columns)
-    
-    # Join with the emissions data on carrier and flight number, sorting on emissions
-    result = (
-        flights.join(
-            emissions,
-            left_on=["CARRIER", "FLTNO"],
-            right_on=["CARRIER_CODE", "FLIGHT_NUMBER"],
-            how="inner"
-        )
-        .with_columns(
-            (pl.col("ESTIMATED_CO2_TOTAL_TONNES") / pl.col("TOTAL_SEATS").cast(pl.Float64))
-            .alias("ESTIMATED_CO2_PER_CAPITA")
-        )
-        .filter(
-            pl.col("ESTIMATED_CO2_PER_CAPITA").is_not_null() & 
-            pl.col("ELPTIM").is_not_null()
-        )
-        .with_columns(
-            pl.struct(["ESTIMATED_CO2_PER_CAPITA", "ELPTIM"])
-            .map_elements(
-                lambda row: scoreFunction(row["ESTIMATED_CO2_PER_CAPITA"], row["ELPTIM"]) 
-                if row["ESTIMATED_CO2_PER_CAPITA"] is not None and row["ELPTIM"] is not None 
-                else None,
-                return_dtype=pl.Float64
-            )
-        ) 
-        .with_columns(
-            pl.struct(["ESTIMATED_CO2_PER_CAPITA", "ELPTIM"])
-            .map_elements(
-                lambda row: scoreFunction(row["ESTIMATED_CO2_PER_CAPITA"], row["ELPTIM"]),
-                return_dtype=pl.Float64
-            )
-            .alias("FLIGHT_SCORE")
-        )
-        .select([
-            pl.col("FLTNO"), 
-            pl.col("DEPCITY"),
-            pl.col("ARRCITY"),
-            
-            # pl.col("DEPAPT"),
-            # pl.col("ARRAPT"),
-            
-            pl.col("ARRTIM"),
-            pl.col("DEPTIM"),
-            pl.col("ELPTIM"),
-            # pl.col("ESTIMATED_CO2_TOTAL_TONNES"),
-            pl.col("ESTIMATED_CO2_PER_CAPITA"),
-            pl.col("FLIGHT_SCORE"),
-            pl.col("INTAPT")
-        ])
-        .sort("FLIGHT_SCORE")
-    ).collect()
-
-    return result.head(1).to_dict(as_series=False)
 
 # d = datetime(2024, 1, 20)
-# print(get_flights_score("LHR", "BOM", d, lambda a, b: a*b))
+# #print(get_flights_score("LHR", "BOM", d, lambda a, b: a*b))
 
-# print(len(set(emissions["DEPARTURE_AIRPORT"])))
+# #print(len(set(emissions["DEPARTURE_AIRPORT"])))
 
 def _ensure_naive(dt):
     if dt is None:
@@ -206,11 +50,12 @@ def _ensure_naive(dt):
     return dt
 
 def evaluate_naive_atOffice(
+
     outbound_map,  # outbound_office: num coming from there
     window_start, # dict - year, month, day
     window_end, 
-    duration_days
-):
+    duration_days):
+    print("DUR", duration_days)
 
     window_start = _ensure_naive(window_start)
     window_end = _ensure_naive(window_end)
@@ -220,11 +65,15 @@ def evaluate_naive_atOffice(
     # calculate cost for legs
     # sum costs
     # take min
-    # print((window_end - window_start).days - duration_days + 1)
+    # #print((window_end - window_start).days - duration_days + 1)
 
     depart_after = window_start + timedelta(days=2)
     arrive_before = window_end + timedelta(days=-duration_days)
-
+    emissions_file = "/opt/durhack/emissions.csv"
+    emissions = pl.scan_csv(emissions_file, infer_schema_length=10000)
+    SCHEDULE_SCHEMA_OVERRIDES = {
+        "ARRDAY": pl.Utf8,
+    }
     # gather all csv in window - 2 to window-duration_days
     schedule_start = window_start - timedelta(days=2)
     schedule_end = arrive_before
@@ -252,8 +101,11 @@ def evaluate_naive_atOffice(
                 )
             )
         else:
-            print(f"Warning: missing schedule file for {cur.date()} at {schedule_file}")
+            pass
+            #print(f"Warning: missing schedule file for {cur.date()} at {schedule_file}")
         cur += timedelta(days=1)
+
+
 
     if not schedule_scans:
         raise FileNotFoundError(
@@ -287,6 +139,8 @@ def evaluate_naive_atOffice(
         "DEPCITY",
         "ARRCITY",
         "INTAPT",
+        "SCHEDULED_DEPARTURE_DATE_TIME_UTC",
+        "SCHEDULED_ARRIVAL_DATE_TIME_UTC",
     ]
 
     emissions_cols = [
@@ -306,6 +160,7 @@ def evaluate_naive_atOffice(
             pl.col("CARRIER").cast(pl.Utf8),
             pl.col("DEPAPT").cast(pl.Utf8),
             pl.col("ARRAPT").cast(pl.Utf8),
+            _clean_numeric("TOTAL_SEATS").alias("TOTAL_SEATS"),
         )
         .join(
             emissions.select(emissions_cols).with_columns(
@@ -313,18 +168,18 @@ def evaluate_naive_atOffice(
                 pl.col("CARRIER_CODE").cast(pl.Utf8),
                 pl.col("DEPARTURE_AIRPORT").cast(pl.Utf8),
                 pl.col("ARRIVAL_AIRPORT").cast(pl.Utf8),
+                _clean_numeric("SEATS").alias("SEATS"),
+                _clean_numeric("ESTIMATED_CO2_TOTAL_TONNES").alias("ESTIMATED_CO2_TOTAL_TONNES"),
             ),
             left_on=["CARRIER", "FLTNO", "DEPAPT", "ARRAPT"],
             right_on=["CARRIER_CODE", "FLIGHT_NUMBER", "DEPARTURE_AIRPORT", "ARRIVAL_AIRPORT"],
             how="left",
         )
         .with_columns(
-            pl.coalesce(
-                [
-                    pl.col("TOTAL_SEATS").cast(pl.Float64),
-                    pl.col("SEATS").cast(pl.Float64),
-                ]
-            ).alias("_seat_capacity")
+            pl.when(pl.col("SEATS").is_not_null() & (pl.col("SEATS") > 0))
+            .then(pl.col("SEATS"))
+            .otherwise(pl.col("TOTAL_SEATS"))
+            .alias("_seat_capacity")
         )
         .with_columns(
             pl.when(
@@ -335,6 +190,11 @@ def evaluate_naive_atOffice(
             .then(pl.col("ESTIMATED_CO2_TOTAL_TONNES") / pl.col("_seat_capacity"))
             .otherwise(None)
             .alias("ESTIMATED_CO2_PER_CAPITA")
+        )
+        .filter(
+            pl.col("ESTIMATED_CO2_TOTAL_TONNES").is_not_null()
+            & pl.col("_seat_capacity").is_not_null()
+            & (pl.col("_seat_capacity") > 0)
         )
         .drop("_seat_capacity")
         .collect()
@@ -354,10 +214,10 @@ def evaluate_naive_atOffice(
         & (pl.col("dep_ts") <= pl.lit(dep_upper_bound))
         & (pl.col("arr_ts") <= pl.lit(arr_upper_bound))
     )
-    print(
-        f"[CSA] Time-window filter reduced timetable from {pre_filter_rows} to {df_ts.height} rows "
-        f"for window {dep_lower_bound} → {arr_upper_bound}"
-    )
+    #print(
+        # f"[CSA] Time-window filter reduced timetable from {pre_filter_rows} to {df_ts.height} rows "
+        # f"for window {dep_lower_bound} → {arr_upper_bound}"
+    # )
 
     # Further prune to airports that are actually reachable from our attendees within a few legs.
     # This avoids carrying flights that are completely disconnected from any origin/meeting point.
@@ -380,9 +240,9 @@ def evaluate_naive_atOffice(
         hop_airports = set(reachable_dep) | set(reachable_arr)
         before = len(network_airports)
         network_airports |= hop_airports
-        print(
-            f"[CSA] Hop {hop + 1}: expanded network to {len(network_airports)} airports"
-        )
+        #print(
+        #     f"[CSA] Hop {hop + 1}: expanded network to {len(network_airports)} airports"
+        # )
         if len(network_airports) == before:
             break
 
@@ -391,10 +251,10 @@ def evaluate_naive_atOffice(
         pl.col("DEPAPT").is_in(network_airports)
         | pl.col("ARRAPT").is_in(network_airports)
     )
-    print(
-        f"[CSA] Network filter reduced timetable from {network_filter_rows} to {df_ts.height} rows "
-        f"across {len(network_airports)} airports"
-    )
+    #print(
+        # f"[CSA] Network filter reduced timetable from {network_filter_rows} to {df_ts.height} rows "
+        # f"across {len(network_airports)} airports"
+    # )
 
     stats_by_meeting_point = {}
     stats_by_meeting_point_by_office = {}
@@ -409,9 +269,11 @@ def evaluate_naive_atOffice(
     for meeting_point in OFFICES:
         attendee_hours_by_office = {}
         co2_by_office = {}
+        routes_by_office = {}
         stats_by_meeting_point_by_office[meeting_point] = {
             "attendee_travel_hours": attendee_hours_by_office,
             "attendee_co2": co2_by_office,
+            "attendee_routes": routes_by_office,
         }
 
         per_attendee_hours = []
@@ -420,7 +282,7 @@ def evaluate_naive_atOffice(
         all_routes_found = True
 
         for outbound_office, num in outbound_map.items():
-            itinerary, eta = csa_fastest_route(
+            itinerary, eta = fastest_leq_one_stop(
                 df_ts,
                 outbound_office,
                 meeting_point,
@@ -428,17 +290,16 @@ def evaluate_naive_atOffice(
                 latest_arrival=arrive_before,
                 min_connection=timedelta(minutes=30),   # set connection buffer
                 min_origin_buffer=timedelta(minutes=0),
-                focus_airports=focus_airports,
             )
 
             if not itinerary or eta is None:
-                print(f"❌ No valid route from {outbound_office} to {meeting_point} before {arrive_before}")
+                #print(f"❌ No valid route from {outbound_office} to {meeting_point} before {arrive_before}")
                 all_routes_found = False
                 break
 
             journey_time = itinerary_travel_time(itinerary)
             if journey_time is None:
-                print(f"⚠️ Unable to determine journey time for {outbound_office} → {meeting_point}")
+                #print(f"⚠️ Unable to determine journey time for {outbound_office} → {meeting_point}")
                 all_routes_found = False
                 break
 
@@ -452,10 +313,24 @@ def evaluate_naive_atOffice(
                 leg_co2 = leg.get("ESTIMATED_CO2_PER_CAPITA")
                 if leg_co2 in (None, ""):
                     total_tonnes = leg.get("ESTIMATED_CO2_TOTAL_TONNES")
-                    seats = leg.get("TOTAL_SEATS") or leg.get("SEATS")
+                    seats = leg.get("TOTAL_SEATS")
                     try:
-                        if total_tonnes is not None and seats not in (None, 0):
-                            leg_co2 = float(total_tonnes) / float(seats)
+                        seats_val = float(seats)
+                    except (TypeError, ValueError):
+                        seats_val = None
+                    if seats_val is None or seats_val <= 0:
+                        seats = leg.get("SEATS")
+                    try:
+                        total_val = float(total_tonnes) if total_tonnes is not None else None
+                        seats_val = float(seats) if seats not in (None, "") else None
+                        if (
+                            total_val is not None
+                            and seats_val is not None
+                            and math.isfinite(total_val)
+                            and math.isfinite(seats_val)
+                            and seats_val > 0.0
+                        ):
+                            leg_co2 = total_val / seats_val
                         else:
                             leg_co2 = 0.0
                     except Exception:
@@ -470,12 +345,31 @@ def evaluate_naive_atOffice(
                 "total": round(route_co2_per_capita * num, 3),
             }
 
-            print(f"✅ Fastest route {outbound_office} → {meeting_point}, ETA {eta}")
+            airport_sequence = []
+            if itinerary:
+                first_leg = itinerary[0]
+                airport_sequence.append(first_leg.get("DEPAPT"))
+                for leg in itinerary:
+                    airport_sequence.append(leg.get("ARRAPT"))
+
+            route_nodes = []
+            for code in airport_sequence:
+                coords = get_airport_coordinates(code)
+                route_nodes.append(
+                    {
+                        "airport_code": coords.get("airport_code"),
+                        "latitude": coords.get("latitude"),
+                        "longitude": coords.get("longitude"),
+                    }
+                )
+            routes_by_office[outbound_office] = route_nodes
+
+            #print(f"✅ Fastest route {outbound_office} → {meeting_point}, ETA {eta}")
             for i, leg in enumerate(itinerary, 1):
                 dep = leg["dep_ts"].strftime("%Y-%m-%d %H:%M")
                 arr = leg["arr_ts"].strftime("%Y-%m-%d %H:%M")
-                print(f"{i:02d}. {leg['DEPAPT']} → {leg['ARRAPT']}  {dep} → {arr}")
-            print(f"Total travel time from {outbound_office}: {journey_time} (~{hours:.2f} hours)")
+                #print(f"{i:02d}. {leg['DEPAPT']} → {leg['ARRAPT']}  {dep} → {arr}")
+            #print(f"Total travel time from {outbound_office}: {journey_time} (~{hours:.2f} hours)")
 
         for outbound_office in outbound_map:
             co2_by_office.setdefault(
@@ -483,6 +377,7 @@ def evaluate_naive_atOffice(
                 {"per_attendee": 0.0, "total": 0.0},
             )
             attendee_hours_by_office.setdefault(outbound_office, 0.0)
+            routes_by_office.setdefault(outbound_office, [])
 
         if not all_routes_found or not per_attendee_hours or not arrival_times:
             stats_by_meeting_point[meeting_point] = {
@@ -533,19 +428,3 @@ def evaluate_naive_atOffice(
         }
 
     return stats_by_meeting_point, stats_by_meeting_point_by_office
-
-    
-outbound_map = {
-    "LHR": 10,
-    "BOM": 5
-}
-
-window_start = datetime(2024, 1, 20)
-window_end = datetime(2024, 1, 25)
-
-print(evaluate_naive_atOffice(
-    outbound_map,  # outbound_office: num coming from there
-    window_start, # dict - year, month, day
-    window_end, 
-    0
-))
