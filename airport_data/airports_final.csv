@@ -1,0 +1,351 @@
+airport,coordinates,code
+Hartsfield–Jackson Atlanta International Airport,"33.6367,-84.428101",ATL
+Beijing Capital International Airport,"40.080101013183594,116.58499908447266",PEK
+Dubai International Airport,"25.2527999878,55.3643989563",DXB
+Los Angeles International Airport,"33.942501,-118.407997",LAX
+Tokyo International Airport,"35.552299,139.779999",HND
+O'Hare International Airport,"41.9786,-87.9048",ORD
+Heathrow Airport,"51.4706,-0.461941",LHR
+Hong Kong International Airport,"22.308901,113.915001",HKG
+Shanghai Pudong International Airport,"31.1434,121.805",PVG
+Charles de Gaulle Airport,"49.012798,2.55",CDG
+Dallas/Fort Worth International Airport,"32.896801,-97.038002",DFW
+Amsterdam Airport Schiphol,"52.308601,4.76389",AMS
+Frankfurt Airport,"50.030241,8.561096",FRA
+Istanbul Atatürk Airport,"41.261297,28.741951",IST
+Guangzhou Baiyun International Airport,"23.392401,113.299004",CAN
+John F. Kennedy International Airport,"40.639447,-73.779317",JFK
+Singapore Changi Airport,"1.35019,103.994003",SIN
+Denver International Airport,"39.861698150635,-104.672996521",DEN
+Seoul Incheon International Airport,"37.469101,126.450996",ICN
+Suvarnabhumi Airport,"13.6811,100.747002",BKK
+Indira Gandhi International Airport,"28.55563,77.09519",DEL
+Soekarno–Hatta International Airport,"-6.12557,106.655998",CGK
+San Francisco International Airport,"37.619806,-122.374821",SFO
+Kuala Lumpur International Airport,"2.74558,101.709999",KUL
+Madrid Barajas Airport,"40.471926,-3.56264",MAD
+McCarran International Airport,"36.083361,-115.151817",LAS
+Chengdu Shuangliu International Airport,"30.558257,103.945966",CTU
+Seattle-Tacoma International Airport,"47.447943,-122.310276",SEA
+Chhatrapati Shivaji International Airport,"19.0886993408,72.8678970337",BOM
+Miami International Airport,"25.79319953918457,-80.29060363769531",MIA
+Charlotte Douglas International Airport,"35.2140007019043,-80.94309997558594",CLT
+Toronto Pearson International Airport,"43.6772,-79.6306",YYZ
+Barcelona–El Prat Airport,"41.2971,2.07846",BCN
+Phoenix Sky Harbor International Airport,"33.435302,-112.005905",PHX
+Gatwick Airport,"51.148771,-0.192089",LGW
+Taiwan Taoyuan International Airport,"25.0777,121.233002",TPE
+Munich Airport,"48.353802,11.7861",MUC
+Sydney Kingsford-Smith Airport,"-33.946098,151.177002",SYD
+Kunming Changshui International Airport,"25.110313,102.936743",KMG
+Shenzhen Bao'an International Airport,"22.639299,113.810997",SZX
+Orlando International Airport,"28.429399490356445,-81.30899810791016",MCO
+Leonardo da Vinci–Fiumicino Airport,"41.804532,12.251998",FCO
+George Bush Intercontinental Airport,"29.984399795532227,-95.34140014648438",IAH
+Benito Juárez International Airport,"19.435137,-99.071328",MEX
+Shanghai Hongqiao International Airport,"31.198104,121.33426",SHA
+Newark Liberty International Airport,"40.692501,-74.168701",EWR
+Ninoy Aquino International Airport,"14.5086,121.019997",MNL
+Narita International Airport,"35.764702,140.386002",NRT
+Minneapolis/St Paul International Airport,"44.880081,-93.221741",MSP
+Hamad International Airport,"25.273056,51.608056",DOH
+Hartsfield–Jackson Atlanta International Airport,"33.6367,-84.428101",ATL
+Beijing Capital International Airport,"40.080101013183594,116.58499908447266",PEK
+Dubai International Airport,"25.2527999878,55.3643989563",DXB
+O'Hare International Airport,"41.9786,-87.9048",ORD
+Tokyo Haneda Airport,"35.552299,139.779999",HND
+London Heathrow Airport,"51.4706,-0.461941",LHR
+Los Angeles International Airport,"33.942501,-118.407997",LAX
+Hong Kong International Airport,"22.308901,113.915001",HKG
+Paris-Charles de Gaulle Airport,"49.012798,2.55",CDG
+Dallas/Fort Worth International Airport,"32.896801,-97.038002",DFW
+Istanbul Atatürk Airport,"41.261297,28.741951",IST
+Frankfurt Airport,"50.030241,8.561096",FRA
+Shanghai Pudong International Airport,"31.1434,121.805",PVG
+Amsterdam Airport Schiphol,"52.308601,4.76389",AMS
+John F. Kennedy International Airport,"40.639447,-73.779317",JFK
+Singapore Changi Airport,"1.35019,103.994003",SIN
+Guangzhou Baiyun International Airport,"23.392401,113.299004",CAN
+Soekarno-Hatta International Airport,"-6.12557,106.655998",CGK
+Denver International Airport,"39.861698150635,-104.672996521",DEN
+Suvarnabhumi Airport,"13.6811,100.747002",BKK
+San Francisco International Airport,"37.619806,-122.374821",SFO
+Seoul Incheon International Airport,"37.469101,126.450996",ICN
+Kuala Lumpur International Airport,"2.74558,101.709999",KUL
+Madrid Barajas Airport,"40.471926,-3.56264",MAD
+Indira Gandhi International Airport,"28.55563,77.09519",DEL
+McCarran International Airport,"36.083361,-115.151817",LAS
+Charlotte Douglas International Airport,"35.2140007019043,-80.94309997558594",CLT
+Miami International Airport,"25.79319953918457,-80.29060363769531",MIA
+Phoenix Sky Harbor International Airport,"33.435302,-112.005905",PHX
+George Bush Intercontinental Airport,"29.984399795532227,-95.34140014648438",IAH
+Seattle-Tacoma International Airport,"47.447943,-122.310276",SEA
+Chengdu Shuangliu International Airport,"30.558257,103.945966",CTU
+Toronto Pearson International Airport,"43.6772,-79.6306",YYZ
+Munich Airport,"48.353802,11.7861",MUC
+Chhatrapati Shivaji International Airport,"19.0886993408,72.8678970337",BOM
+Leonardo da Vinci–Fiumicino Airport,"41.804532,12.251998",FCO
+London Gatwick Airport,"51.148771,-0.192089",LGW
+Sydney Kingsford-Smith Airport,"-33.946098,151.177002",SYD
+Shenzhen Bao'an International Airport,"22.639299,113.810997",SZX
+Barcelona–El Prat Airport,"41.2971,2.07846",BCN
+São Paulo-Guarulhos International Airport,"-23.431944,-46.467778",GRU
+Shanghai Hongqiao International Airport,"31.198104,121.33426",SHA
+Orlando International Airport,"28.429399490356445,-81.30899810791016",MCO
+Taiwan Taoyuan International Airport,"25.0777,121.233002",TPE
+Benito Juárez International Airport,"19.435137,-99.071328",MEX
+Kunming Changshui International Airport,"25.110313,102.936743",KMG
+Newark Liberty International Airport,"40.692501,-74.168701",EWR
+Narita International Airport,"35.764702,140.386002",NRT
+Ninoy Aquino International Airport,"14.5086,121.019997",MNL
+Minneapolis/St Paul International Airport,"44.880081,-93.221741",MSP
+Hartsfield–Jackson Atlanta International Airport,"33.6367,-84.428101",ATL
+Beijing Capital International Airport,"40.080101013183594,116.58499908447266",PEK
+London Heathrow Airport,"51.4706,-0.461941",LHR
+Tokyo Haneda Airport,"35.552299,139.779999",HND
+Los Angeles International Airport,"33.942501,-118.407997",LAX
+Dubai International Airport,"25.2527999878,55.3643989563",DXB
+O'Hare International Airport,"41.9786,-87.9048",ORD
+Paris-Charles de Gaulle Airport,"49.012798,2.55",CDG
+Dallas/Fort Worth International Airport,"32.896801,-97.038002",DFW
+Hong Kong International Airport,"22.308901,113.915001",HKG
+Frankfurt Airport,"50.030241,8.561096",FRA
+Soekarno-Hatta International Airport,"-6.12557,106.655998",CGK
+Istanbul Atatürk Airport,"41.261297,28.741951",IST
+Amsterdam Airport Schiphol,"52.308601,4.76389",AMS
+Guangzhou Baiyun International Airport,"23.392401,113.299004",CAN
+Singapore Changi Airport,"1.35019,103.994003",SIN
+Denver International Airport,"39.861698150635,-104.672996521",DEN
+John F. Kennedy International Airport,"40.639447,-73.779317",JFK
+Shanghai Pudong International Airport,"31.1434,121.805",PVG
+Kuala Lumpur International Airport,"2.74558,101.709999",KUL
+San Francisco International Airport,"37.619806,-122.374821",SFO
+Suvarnabhumi Airport,"13.6811,100.747002",BKK
+Seoul Incheon International Airport,"37.469101,126.450996",ICN
+Charlotte Douglas International Airport,"35.2140007019043,-80.94309997558594",CLT
+McCarran International Airport,"36.083361,-115.151817",LAS
+Phoenix Sky Harbor International Airport,"33.435302,-112.005905",PHX
+Madrid Barajas Airport,"40.471926,-3.56264",MAD
+George Bush Intercontinental Airport,"29.984399795532227,-95.34140014648438",IAH
+Miami International Airport,"25.79319953918457,-80.29060363769531",MIA
+São Paulo-Guarulhos International Airport,"-23.431944,-46.467778",GRU
+Indira Gandhi International Airport,"28.55563,77.09519",DEL
+Munich Airport,"48.353802,11.7861",MUC
+Sydney Kingsford-Smith Airport,"-33.946098,151.177002",SYD
+Toronto Pearson International Airport,"43.6772,-79.6306",YYZ
+Leonardo da Vinci–Fiumicino Airport,"41.804532,12.251998",FCO
+London Gatwick Airport,"51.148771,-0.192089",LGW
+Shanghai Hongqiao International Airport,"31.198104,121.33426",SHA
+Chengdu Shuangliu International Airport,"30.558257,103.945966",CTU
+Barcelona–El Prat Airport,"41.2971,2.07846",BCN
+Seattle-Tacoma International Airport,"47.447943,-122.310276",SEA
+Shenzhen Bao'an International Airport,"22.639299,113.810997",SZX
+Taiwan Taoyuan International Airport,"25.0777,121.233002",TPE
+Orlando International Airport,"28.429399490356445,-81.30899810791016",MCO
+Newark Liberty International Airport,"40.692501,-74.168701",EWR
+Narita International Airport,"35.764702,140.386002",NRT
+Minneapolis/St Paul International Airport,"44.880081,-93.221741",MSP
+Chhatrapati Shivaji International Airport,"19.0886993408,72.8678970337",BOM
+Benito Juárez International Airport,"19.435137,-99.071328",MEX
+Ninoy Aquino International Airport,"14.5086,121.019997",MNL
+Domodedovo International Airport,"55.408798,37.9063",DME
+Hartsfield–Jackson Atlanta International Airport,"33.6367,-84.428101",ATL
+Beijing Capital International Airport,"40.080101013183594,116.58499908447266",PEK
+Heathrow Airport,"51.4706,-0.461941",LHR
+Tokyo Haneda Airport,"35.552299,139.779999",HND
+O'Hare International Airport,"41.9786,-87.9048",ORD
+Los Angeles International Airport,"33.942501,-118.407997",LAX
+Dubai International Airport,"25.2527999878,55.3643989563",DXB
+Paris-Charles de Gaulle Airport,"49.012798,2.55",CDG
+Dallas/Fort Worth International Airport,"32.896801,-97.038002",DFW
+Soekarno-Hatta International Airport,"-6.12557,106.655998",CGK
+Hong Kong International Airport,"22.308901,113.915001",HKG
+Frankfurt Airport,"50.030241,8.561096",FRA
+Singapore Changi Airport,"1.35019,103.994003",SIN
+Amsterdam Schiphol Airport,"52.308601,4.76389",AMS
+Denver International Airport,"39.861698150635,-104.672996521",DEN
+Guangzhou Baiyun International Airport,"23.392401,113.299004",CAN
+Suvarnabhumi Airport,"13.6811,100.747002",BKK
+Atatürk International Airport,"41.261297,28.741951",IST
+John F. Kennedy International Airport,"40.639447,-73.779317",JFK
+Kuala Lumpur International Airport,"2.74558,101.709999",KUL
+Shanghai Pudong International Airport,"31.1434,121.805",PVG
+San Francisco International Airport,"37.619806,-122.374821",SFO
+Charlotte Douglas International Airport,"35.2140007019043,-80.94309997558594",CLT
+McCarran International Airport,"36.083361,-115.151817",LAS
+Seoul Incheon International Airport,"37.469101,126.450996",ICN
+Miami International Airport,"25.79319953918457,-80.29060363769531",MIA
+Phoenix Sky Harbor International Airport,"33.435302,-112.005905",PHX
+George Bush Intercontinental Airport,"29.984399795532227,-95.34140014648438",IAH
+Madrid Barajas Airport,"40.471926,-3.56264",MAD
+Munich Airport,"48.353802,11.7861",MUC
+Sydney Kingsford-Smith Airport,"-33.946098,151.177002",SYD
+Indira Gandhi International Airport,"28.55563,77.09519",DEL
+São Paulo-Guarulhos International Airport,"-23.431944,-46.467778",GRU
+Leonardo da Vinci–Fiumicino Airport,"41.804532,12.251998",FCO
+Toronto Pearson International Airport,"43.6772,-79.6306",YYZ
+Shanghai Hongqiao International Airport,"31.198104,121.33426",SHA
+London Gatwick Airport,"51.148771,-0.192089",LGW
+Narita International Airport,"35.764702,140.386002",NRT
+Barcelona–El Prat Airport,"41.2971,2.07846",BCN
+Newark Liberty International Airport,"40.692501,-74.168701",EWR
+Orlando International Airport,"28.429399490356445,-81.30899810791016",MCO
+Seattle-Tacoma International Airport,"47.447943,-122.310276",SEA
+Minneapolis/St Paul International Airport,"44.880081,-93.221741",MSP
+Chengdu Shuangliu International Airport,"30.558257,103.945966",CTU
+Ninoy Aquino International Airport,"14.5086,121.019997",MNL
+Detroit Metropolitan Wayne County Airport,"42.21377,-83.353786",DTW
+Shenzhen Bao'an International Airport,"22.639299,113.810997",SZX
+Chhatrapati Shivaji International Airport,"19.0886993408,72.8678970337",BOM
+Benito Juárez International Airport,"19.435137,-99.071328",MEX
+Domodedovo International Airport,"55.408798,37.9063",DME
+Hartsfield–Jackson Atlanta International Airport,"33.6367,-84.428101",ATL
+Beijing Capital International Airport,"40.080101013183594,116.58499908447266",PEK
+London Heathrow Airport,"51.4706,-0.461941",LHR
+Tokyo International Airport,"35.552299,139.779999",HND
+O'Hare International Airport,"41.9786,-87.9048",ORD
+Los Angeles International Airport,"33.942501,-118.407997",LAX
+Paris-Charles de Gaulle Airport,"49.012798,2.55",CDG
+Dallas-Fort Worth International Airport,"32.896801,-97.038002",DFW
+Soekarno-Hatta International Airport,"-6.12557,106.655998",CGK
+Dubai International Airport,"25.2527999878,55.3643989563",DXB
+Frankfurt Airport,"50.030241,8.561096",FRA
+Hong Kong International Airport,"22.308901,113.915001",HKG
+Denver International Airport,"39.861698150635,-104.672996521",DEN
+Suvarnabhumi Airport,"13.6811,100.747002",BKK
+Singapore Changi Airport,"1.35019,103.994003",SIN
+Amsterdam Schiphol Airport,"52.308601,4.76389",AMS
+John F. Kennedy International Airport,"40.639447,-73.779317",JFK
+Guangzhou Baiyun International Airport,"23.392401,113.299004",CAN
+Madrid Barajas Airport,"40.471926,-3.56264",MAD
+Atatürk International Airport,"41.261297,28.741951",IST
+Shanghai Pudong International Airport,"31.1434,121.805",PVG
+San Francisco International Airport,"37.619806,-122.374821",SFO
+McCarran International Airport,"36.083361,-115.151817",LAS
+Charlotte Douglas International Airport,"35.2140007019043,-80.94309997558594",CLT
+Phoenix Sky Harbor International Airport,"33.435302,-112.005905",PHX
+George Bush Intercontinental Airport,"29.984399795532227,-95.34140014648438",IAH
+Kuala Lumpur International Airport,"2.74558,101.709999",KUL
+Miami International Airport,"25.79319953918457,-80.29060363769531",MIA
+Seoul Incheon International Airport,"37.469101,126.450996",ICN
+Munich Airport,"48.353802,11.7861",MUC
+Sydney Airport,"-33.946098,151.177002",SYD
+Leonardo da Vinci-Fiumicino Airport,"41.804532,12.251998",FCO
+Orlando International Airport,"28.429399490356445,-81.30899810791016",MCO
+Barcelona Airport,"41.2971,2.07846",BCN
+Toronto Pearson International Airport,"43.6772,-79.6306",YYZ
+London Gatwick Airport,"51.148771,-0.192089",LGW
+Indira Gandhi International Airport,"28.55563,77.09519",DEL
+Newark Liberty International Airport,"40.692501,-74.168701",EWR
+Shanghai Hongqiao International Airport,"31.198104,121.33426",SHA
+Seattle-Tacoma International Airport,"47.447943,-122.310276",SEA
+Minneapolis-Saint Paul International Airport,"44.880081,-93.221741",MSP
+Narita International Airport,"35.764702,140.386002",NRT
+São Paulo-Guarulhos International Airport,"-23.431944,-46.467778",GRU
+Detroit Metropolitan Wayne County Airport,"42.21377,-83.353786",DTW
+Ninoy Aquino International Airport,"14.5086,121.019997",MNL
+Chengdu Shuangliu International Airport,"30.558257,103.945966",CTU
+Philadelphia International Airport,"39.871899,-75.241096",PHL
+Chhatrapati Shivaji International Airport,"19.0886993408,72.8678970337",BOM
+Shenzhen Bao'an International Airport,"22.639299,113.810997",SZX
+Tullamarine International Airport,"-37.661548,144.836432",MEL
+Hartsfield–Jackson Atlanta International Airport,"33.6367,-84.428101",ATL
+Beijing Capital International Airport,"40.080101013183594,116.58499908447266",PEK
+London Heathrow Airport,"51.4706,-0.461941",LHR
+O'Hare International Airport,"41.9786,-87.9048",ORD
+Tokyo International Airport,"35.552299,139.779999",HND
+Los Angeles International Airport,"33.942501,-118.407997",LAX
+Paris-Charles de Gaulle Airport,"49.012798,2.55",CDG
+Dallas-Fort Worth International Airport,"32.896801,-97.038002",DFW
+Frankfurt Airport,"50.030241,8.561096",FRA
+Hong Kong International Airport,"22.308901,113.915001",HKG
+Denver International Airport,"39.861698150635,-104.672996521",DEN
+Soekarno-Hatta International Airport,"-6.12557,106.655998",CGK
+Dubai International Airport,"25.2527999878,55.3643989563",DXB
+Amsterdam Schiphol Airport,"52.308601,4.76389",AMS
+Madrid Barajas Airport,"40.471926,-3.56264",MAD
+Suvarnabhumi Airport,"13.6811,100.747002",BKK
+John F. Kennedy International Airport,"40.639447,-73.779317",JFK
+Singapore Changi Airport,"1.35019,103.994003",SIN
+Guangzhou Baiyun International Airport,"23.392401,113.299004",CAN
+Shanghai Pudong International Airport,"31.1434,121.805",PVG
+San Francisco International Airport,"37.619806,-122.374821",SFO
+Phoenix Sky Harbor International Airport,"33.435302,-112.005905",PHX
+McCarran International Airport,"36.083361,-115.151817",LAS
+George Bush Intercontinental Airport,"29.984399795532227,-95.34140014648438",IAH
+Charlotte Douglas International Airport,"35.2140007019043,-80.94309997558594",CLT
+Miami International Airport,"25.79319953918457,-80.29060363769531",MIA
+Munich Airport,"48.353802,11.7861",MUC
+Kuala Lumpur International Airport,"2.74558,101.709999",KUL
+Leonardo da Vinci-Fiumicino Airport,"41.804532,12.251998",FCO
+Atatürk International Airport,"41.261297,28.741951",IST
+Sydney Airport,"-33.946098,151.177002",SYD
+Orlando International Airport,"28.429399490356445,-81.30899810791016",MCO
+Seoul Incheon International Airport,"37.469101,126.450996",ICN
+Indira Gandhi International Airport,"28.55563,77.09519",DEL
+Barcelona Airport,"41.2971,2.07846",BCN
+London Gatwick Airport,"51.148771,-0.192089",LGW
+Newark Liberty International Airport,"40.692501,-74.168701",EWR
+Toronto Pearson International Airport,"43.6772,-79.6306",YYZ
+Shanghai Hongqiao International Airport,"31.198104,121.33426",SHA
+Minneapolis-Saint Paul International Airport,"44.880081,-93.221741",MSP
+Seattle-Tacoma International Airport,"47.447943,-122.310276",SEA
+Detroit Metropolitan Wayne County Airport,"42.21377,-83.353786",DTW
+Philadelphia International Airport,"39.871899,-75.241096",PHL
+Chhatrapati Shivaji International Airport,"19.0886993408,72.8678970337",BOM
+São Paulo-Guarulhos International Airport,"-23.431944,-46.467778",GRU
+Ninoy Aquino International Airport,"14.5086,121.019997",MNL
+Chengdu Shuangliu International Airport,"30.558257,103.945966",CTU
+Logan International Airport,"42.36197,-71.0079",BOS
+Shenzhen Bao'an International Airport,"22.639299,113.810997",SZX
+Melbourne Airport,"-37.661548,144.836432",MEL
+Hartsfield–Jackson Atlanta International Airport,"33.6367,-84.428101",ATL
+Beijing Capital International Airport,"40.080101013183594,116.58499908447266",PEK
+O'Hare International Airport,"41.9786,-87.9048",ORD
+London Heathrow Airport,"51.4706,-0.461941",LHR
+Tokyo International Airport,"35.552299,139.779999",HND
+Los Angeles International Airport,"33.942501,-118.407997",LAX
+Paris-Charles de Gaulle Airport,"49.012798,2.55",CDG
+Dallas-Fort Worth International Airport,"32.896801,-97.038002",DFW
+Frankfurt Airport,"50.030241,8.561096",FRA
+Denver International Airport,"39.861698150635,-104.672996521",DEN
+Hong Kong International Airport,"22.308901,113.915001",HKG
+Madrid-Barajas Airport,"40.471926,-3.56264",MAD
+Dubai International Airport,"25.2527999878,55.3643989563",DXB
+John F. Kennedy International Airport,"40.639447,-73.779317",JFK
+Amsterdam Airport Schiphol,"52.308601,4.76389",AMS
+Soekarno-Hatta International Airport,"-6.12557,106.655998",CGK
+Suvarnabhumi Airport,"13.6811,100.747002",BKK
+Singapore Changi Airport,"1.35019,103.994003",SIN
+Guangzhou Baiyun International Airport,"23.392401,113.299004",CAN
+Shanghai Pudong International Airport,"31.1434,121.805",PVG
+George Bush Intercontinental Airport,"29.984399795532227,-95.34140014648438",IAH
+McCarran International Airport,"36.083361,-115.151817",LAS
+San Francisco International Airport,"37.619806,-122.374821",SFO
+Phoenix Sky Harbor International Airport,"33.435302,-112.005905",PHX
+Charlotte Douglas International Airport,"35.2140007019043,-80.94309997558594",CLT
+Leonardo da Vinci Airport,"41.804532,12.251998",FCO
+Sydney Airport,"-33.946098,151.177002",SYD
+Miami International Airport,"25.79319953918457,-80.29060363769531",MIA
+Orlando International Airport,"28.429399490356445,-81.30899810791016",MCO
+Munich Airport,"48.353802,11.7861",MUC
+Kuala Lumpur International Airport,"2.74558,101.709999",KUL
+Narita International Airport,"35.764702,140.386002",NRT
+Seoul Incheon International Airport,"37.469101,126.450996",ICN
+Newark Liberty International Airport,"40.692501,-74.168701",EWR
+Minneapolis-Saint Paul International Airport,"44.880081,-93.221741",MSP
+Detroit Metropolitan Wayne County Airport,"42.21377,-83.353786",DTW
+Atatürk International Airport,"41.261297,28.741951",IST
+Toronto Pearson International Airport,"43.6772,-79.6306",YYZ
+Seattle-Tacoma International Airport,"47.447943,-122.310276",SEA
+London Gatwick Airport,"51.148771,-0.192089",LGW
+Shanghai Hongqiao International Airport,"31.198104,121.33426",SHA
+Philadelphia International Airport,"39.871899,-75.241096",PHL
+Barcelona Airport,"41.2971,2.07846",BCN
+Indira Gandhi International Airport,"28.55563,77.09519",DEL
+Chhatrapati Shivaji International Airport,"19.0886993408,72.8678970337",BOM
+Melbourne Airport,"-37.661548,144.836432",MEL
+São Paulo-Guarulhos International Airport,"-23.431944,-46.467778",GRU
+Logan International Airport,"42.36197,-71.0079",BOS
+Ninoy Aquino International Airport,"14.5086,121.019997",MNL
+Shenzhen Bao'an International Airport,"22.639299,113.810997",SZX
