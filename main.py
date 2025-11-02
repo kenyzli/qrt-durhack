@@ -198,12 +198,22 @@ def get_flights_score_v2(A: str, B: str, schedules,
 
 # print(len(set(emissions["DEPARTURE_AIRPORT"])))
 
+def _ensure_naive(dt):
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
 def evaluate_naive_atOffice(
     outbound_map,  # outbound_office: num coming from there
     window_start, # dict - year, month, day
     window_end, 
     duration_days
 ):
+
+    window_start = _ensure_naive(window_start)
+    window_end = _ensure_naive(window_end)
 
     # find fastest that arrives beofore window_end - duration_days
     # ^ for each possible meeting
@@ -212,7 +222,6 @@ def evaluate_naive_atOffice(
     # take min
     # print((window_end - window_start).days - duration_days + 1)
 
-    final_flights = {} 
     depart_after = window_start + timedelta(days=2)
     arrive_before = window_end + timedelta(days=-duration_days)
 
@@ -253,6 +262,15 @@ def evaluate_naive_atOffice(
 
     schedules = (
         pl.concat(schedule_scans) if len(schedule_scans) > 1 else schedule_scans[0]
+    )
+
+    # Restrict to flights operating inside the schedule window we loaded from disk.
+    flight_date_start = schedule_start.date()
+    flight_date_end = schedule_end.date()
+    schedules = schedules.filter(
+        pl.col("FLIGHT_DATE")
+        .str.strptime(pl.Date, "%Y-%m-%d", strict=False)
+        .is_between(flight_date_start, flight_date_end, closed="both")
     )
 
     schedule_cols = [

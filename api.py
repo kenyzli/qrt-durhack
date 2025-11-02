@@ -41,12 +41,6 @@ def parse_iso_z(dt_str: str) -> datetime:
     return datetime.fromisoformat(s)
 
 
-def to_iso_z(dt: datetime) -> str:
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
 @app.route("/plan", methods=["POST"])
 def plan():
     payload = request.get_json()
@@ -72,119 +66,88 @@ def plan():
 
     # evaluate_naive_atOffice only uses days for duration; keep hours separately
     duration_days = int(duration.get("days", 0))
-    duration_hours = int(duration.get("hours", 0))
 
     # call the existing function to pick flights
     try:
-        final_flights = evaluate_naive_atOffice(outbound_map, window_start, window_end, duration_days)
+        meeting_stats, meeting_stats_by_office = evaluate_naive_atOffice(
+            outbound_map, window_start, window_end, duration_days
+        )
     except Exception as e:
         return jsonify({"error": "evaluation_failed", "detail": str(e)}), 500
 
-    if not final_flights:
+    if not meeting_stats:
         return jsonify({"error": "no_plan_found"}), 500
 
-    # Extract event location: arrival city if present, otherwise arrival airport (IATA)
-    sample = None
-    for v in final_flights.values():
-        sample = v
-        break
+    viable_meeting_points = [
+        (mp, data)
+        for mp, data in meeting_stats.items()
+        if data
+        and data.get("event_dates", {}).get("start") is not None
+    ]
 
-    event_location = None
-    if sample is not None:
-        # prefer ARRCITY, then INTAPT, then infer from OFFICES
-        if "ARRCITY" in sample and sample["ARRCITY"]:
-            event_location = sample["ARRCITY"][0]
-        elif "INTAPT" in sample and sample["INTAPT"]:
-            event_location = sample["INTAPT"][0]
-    if event_location is None:
-        # fallback: pick first office code
-        event_location = OFFICES[0]
+    if not viable_meeting_points:
+        return jsonify({"error": "no_plan_found"}), 500
 
-    event_location = IATA_TO_CITY.get(event_location, event_location)
-
-    # compute attendee travel hours and co2
-    per_attendee_hours = []
-    attendee_travel_hours = {}
-    total_co2 = 0.0
-
-    for origin_iata, info in final_flights.items():
-        count = int(outbound_map.get(origin_iata, 1))
-        # data from main.get_flights_score is returned as lists for each column
-        elptim_val = None
-        co2_per_capita = None
-        if isinstance(info.get("ELPTIM"), list) and info.get("ELPTIM"):
-            elptim_val = info.get("ELPTIM")[0]
-        else:
-            elptim_val = info.get("ELPTIM")
-
-        if isinstance(info.get("ESTIMATED_CO2_PER_CAPITA"), list) and info.get("ESTIMATED_CO2_PER_CAPITA"):
-            co2_per_capita = info.get("ESTIMATED_CO2_PER_CAPITA")[0]
-        else:
-            co2_per_capita = info.get("ESTIMATED_CO2_PER_CAPITA")
-
-        # assume ELPTIM is minutes (common in schedule datasets); convert to hours
+    def _score_key(item):
+        mp, data = item
+        score = data.get("total_score")
+        score = float(score) if score is not None else float("inf")
         try:
-            elptim_val = float(elptim_val)
-            hours = elptim_val / 60.0
-        except Exception:
-            # fallback: if it's already hours
-            try:
-                hours = float(elptim_val)
-            except Exception:
-                hours = 0.0
+            priority = OFFICES.index(mp)
+        except ValueError:
+            priority = len(OFFICES)
+        return (score, priority, mp)
 
-        attendee_travel_hours[origin_iata] = round(hours, 2)
-        # add to per-individual list
-        per_attendee_hours.extend([hours] * count)
+    best_meeting_point, best_stats = min(viable_meeting_points, key=_score_key)
 
-        # CO2 per capita is in tonnes; sum across attendees
-        try:
-            co2_per_capita = float(co2_per_capita)
-        except Exception:
-            co2_per_capita = 0.0
-
-        total_co2 += co2_per_capita * count
-
-    if per_attendee_hours:
-        avg = float(np.mean(per_attendee_hours))
-        med = float(np.median(per_attendee_hours))
-        mx = float(np.max(per_attendee_hours))
-        mn = float(np.min(per_attendee_hours))
-    else:
-        avg = med = mx = mn = 0.0
-
-    # Build event date/time estimates
-    # Choose event start as availability_window start + 30 minutes (heuristic)
-    event_start = window_start + timedelta(minutes=30)
-    event_end = event_start + timedelta(days=duration_days, hours=duration_hours)
-
-    # event span extended by max travel hours on either side
-    event_span_start = event_start - timedelta(hours=mx)
-    event_span_end = event_end + timedelta(hours=mx)
+    per_office_stats = meeting_stats_by_office.get(best_meeting_point, {})
+    attendee_hours_by_office = per_office_stats.get("attendee_travel_hours", {}) or {}
+    attendee_co2_by_office = per_office_stats.get("attendee_co2", {}) or {}
 
     # Map attendee_travel_hours keys back to city names if possible
     iata_to_city = {v: k for k, v in CITY_TO_IATA.items()}
+
     attendee_travel_hours_named = {}
-    for iata, hrs in attendee_travel_hours.items():
+    for iata, hrs in attendee_hours_by_office.items():
         name = iata_to_city.get(iata, iata)
-        attendee_travel_hours_named[name] = hrs
+        try:
+            attendee_travel_hours_named[name] = round(float(hrs), 2)
+        except Exception:
+            attendee_travel_hours_named[name] = hrs
+
+    attendee_co2_named = {}
+    for iata, metrics in attendee_co2_by_office.items():
+        name = iata_to_city.get(iata, iata)
+        attendee_co2_named[name] = metrics
+
+    event_location_code = best_meeting_point
+    event_location = IATA_TO_CITY.get(event_location_code, event_location_code)
+
+    avg = best_stats.get("average_travel_hours", 0.0)
+    med = best_stats.get("median_travel_hours", 0.0)
+    mx = best_stats.get("max_travel_hours", 0.0)
+    mn = best_stats.get("min_travel_hours", 0.0)
 
     result = {
         "event_location": event_location,
+        "meeting_point_iata": event_location_code,
         "event_dates": {
-            "start": to_iso_z(event_start),
-            "end": to_iso_z(event_end),
+            "start": best_stats.get("event_dates", {}).get("start"),
+            "end": best_stats.get("event_dates", {}).get("end"),
         },
         "event_span": {
-            "start": to_iso_z(event_span_start),
-            "end": to_iso_z(event_span_end),
+            "start": best_stats.get("event_span", {}).get("start"),
+            "end": best_stats.get("event_span", {}).get("end"),
         },
-        "total_co2": round(float(total_co2), 3),
-        "average_travel_hours": round(avg, 2),
-        "median_travel_hours": round(med, 2),
-        "max_travel_hours": round(mx, 2),
-        "min_travel_hours": round(mn, 2),
+        "total_co2": best_stats.get("total_co2", 0.0),
+        "average_travel_hours": avg,
+        "median_travel_hours": med,
+        "max_travel_hours": mx,
+        "min_travel_hours": mn,
+        "fairness": best_stats.get("fairness"),
+        "total_score": best_stats.get("total_score"),
         "attendee_travel_hours": attendee_travel_hours_named,
+        "attendee_co2": attendee_co2_named,
     }
 
     return jsonify(result)
