@@ -144,6 +144,11 @@ def _scan_schedule_window(schedule_start, schedule_end):
                     pl.col("FLTNO").cast(pl.Utf8, strict=False),
                     pl.col("DEPAPT").cast(pl.Utf8, strict=False),
                     pl.col("ARRAPT").cast(pl.Utf8, strict=False),
+                    pl.col("SCHEDULED_DEPARTURE_DATE_TIME_UTC").str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S%.3f", strict=False),
+                    pl.col("SCHEDULED_ARRIVAL_DATE_TIME_UTC").str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S%.3f", strict=False),
+                    pl.col("SCHEDULED_DEPARTURE_DATE_TIME_LOCAL").str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S%.3f", strict=False),
+                    pl.col("SCHEDULED_ARRIVAL_DATE_TIME_LOCAL").str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S%.3f", strict=False),
+
                 )
             )
         cur += timedelta(days=1)
@@ -184,8 +189,26 @@ def _prepare_flight_dataframe(schedules_lf):
             pl.col("ARRAPT").cast(pl.Utf8),
             _clean_numeric("TOTAL_SEATS").alias("TOTAL_SEATS"),
         )
-        .join(
-            emissions,
+        .with_columns(
+            # Offset in hours: difference between local and UTC
+            ((pl.col("SCHEDULED_DEPARTURE_DATE_TIME_LOCAL") - pl.col("SCHEDULED_DEPARTURE_DATE_TIME_UTC"))
+                .dt.total_seconds() / 3600).alias("DEPARTURE_TZ_OFFSET_HOURS"),
+
+            ((pl.col("SCHEDULED_ARRIVAL_DATE_TIME_LOCAL") - pl.col("SCHEDULED_ARRIVAL_DATE_TIME_UTC"))
+                .dt.total_seconds() / 3600).alias("ARRIVAL_TZ_OFFSET_HOURS"),
+
+            # Timezone change / jetlag direction (positive = eastbound)
+            ((pl.col("SCHEDULED_ARRIVAL_DATE_TIME_LOCAL") - pl.col("SCHEDULED_ARRIVAL_DATE_TIME_UTC")).dt.total_seconds()/3600
+                - (pl.col("SCHEDULED_DEPARTURE_DATE_TIME_LOCAL") - pl.col("SCHEDULED_DEPARTURE_DATE_TIME_UTC")).dt.total_seconds()/3600).alias("TIMEZONE_SHIFT_HOURS"))
+                .join(
+            emissions.select(emissions_cols).with_columns(
+                pl.col("FLIGHT_NUMBER").cast(pl.Utf8),
+                pl.col("CARRIER_CODE").cast(pl.Utf8),
+                pl.col("DEPARTURE_AIRPORT").cast(pl.Utf8),
+                pl.col("ARRIVAL_AIRPORT").cast(pl.Utf8),
+                _clean_numeric("SEATS").alias("SEATS"),
+                _clean_numeric("ESTIMATED_CO2_TOTAL_TONNES").alias("ESTIMATED_CO2_TOTAL_TONNES"),
+            ),
             left_on=["CARRIER", "FLTNO", "DEPAPT", "ARRAPT"],
             right_on=[
                 "CARRIER_CODE",
@@ -206,6 +229,7 @@ def _prepare_flight_dataframe(schedules_lf):
                 (pl.col("ESTIMATED_CO2_TOTAL_TONNES").is_not_null())
                 & (pl.col("_seat_capacity").is_not_null())
                 & (pl.col("_seat_capacity") > 0)
+                & (pl.col('GHOST').is_not_null())
             )
             .then(pl.col("ESTIMATED_CO2_TOTAL_TONNES") / pl.col("_seat_capacity"))
             .otherwise(None)
@@ -374,13 +398,16 @@ def _evaluate_single_meeting_point(
     attendee_hours_by_office = {}
     co2_by_office = {}
     routes_by_office = {}
+    attendee_timezone_by_office = {}
     stats_by_office = {
         "attendee_travel_hours": attendee_hours_by_office,
         "attendee_co2": co2_by_office,
         "attendee_routes": routes_by_office,
+        "attendee_timezone_shift": attendee_timezone_by_office,
     }
 
     per_attendee_hours = []
+    per_attendee_timezone_shifts = []
     arrival_times = []
     total_co2 = 0.0
     all_routes_found = True
@@ -434,6 +461,8 @@ def _evaluate_single_meeting_point(
         attendee_hours_by_office[outbound_office] = round(hours, 2)
         per_attendee_hours.extend([hours] * num)
         arrival_times.extend([eta] * num)
+        attendee_timezone_by_office[outbound_office] = round(route_tz_shift, 2)
+        per_attendee_timezone_shifts.extend([route_tz_shift] * num)
 
         total_co2 += route_co2_per_capita * num
         co2_by_office[outbound_office] = {
@@ -449,6 +478,7 @@ def _evaluate_single_meeting_point(
             {"per_attendee": 0.0, "total": 0.0},
         )
         attendee_hours_by_office.setdefault(outbound_office, 0.0)
+        attendee_timezone_by_office.setdefault(outbound_office, 0.0)
         routes_by_office.setdefault(outbound_office, [])
 
     if not all_routes_found or not per_attendee_hours or not arrival_times:
@@ -472,7 +502,10 @@ def _evaluate_single_meeting_point(
     mx = float(np.max(per_attendee_hours))
     mn = float(np.min(per_attendee_hours))
     fairness = float(np.var(per_attendee_hours)) if len(per_attendee_hours) > 1 else 0.0
-
+    tz_avg = float(np.mean(per_attendee_timezone_shifts)) if per_attendee_timezone_shifts else 0.0
+    tz_med = float(np.median(per_attendee_timezone_shifts)) if per_attendee_timezone_shifts else 0.0
+    tz_mx = float(np.max(per_attendee_timezone_shifts)) if per_attendee_timezone_shifts else 0.0
+    tz_mn = float(np.min(per_attendee_timezone_shifts)) if per_attendee_timezone_shifts else 0.0
     latest_arrival = max(arrival_times)
     earliest_arrival = min(arrival_times)
     event_start = latest_arrival
@@ -481,7 +514,7 @@ def _evaluate_single_meeting_point(
     event_span_end = event_end + timedelta(hours=mx)
 
     co2_value = float(total_co2)
-    total_score = 0.5 * fairness + 0.5 * co2_value
+    total_score = 0.5 * fairness + 0.5 * co2_value + 0 * tz_avg
 
     meeting_stats = {
         "event_dates": {
@@ -497,6 +530,10 @@ def _evaluate_single_meeting_point(
         "median_travel_hours": round(med, 2),
         "max_travel_hours": round(mx, 2),
         "min_travel_hours": round(mn, 2),
+        "average_timezone_shift_hours": round(tz_avg, 2),
+        "median_timezone_shift_hours": round(tz_med, 2),
+        "max_timezone_shift_hours": round(tz_mx, 2),
+        "min_timezone_shift_hours": round(tz_mn, 2),
         "fairness": round(fairness, 4),
         "total_score": round(total_score, 3),
     }
