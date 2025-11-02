@@ -516,7 +516,7 @@ desert_southwest = SearchNode("LAS", [SearchNode("PHX")])
 west = SearchNode("LAX", [pacific_coast, desert_southwest])
 central_north = SearchNode("ORD", [SearchNode("MSP"), SearchNode("DTW"), SearchNode("DEN")])
 central_south = SearchNode("DFW", [SearchNode("IAH"), SearchNode("MEX")])
-southeast = SearchNode("ATL", [SearchNode("CLT"),search_root("MCO"),SearchNode("MIA")])
+southeast = SearchNode("ATL", [SearchNode("CLT"),SearchNode("MCO"),SearchNode("MIA")])
 new_york_cluster = SearchNode("JFK", [SearchNode("EWR"), SearchNode("PHL")])
 northeast_canada = SearchNode("BOS", [SearchNode("YYZ")])
 east = SearchNode("JFK", [southeast, new_york_cluster, northeast_canada])
@@ -580,9 +580,9 @@ def evaluate_naive_atAirport(
 
     curr = search_root
 
-    while curr.children != None:
+    while curr and curr.children is not None:
         best_child = None
-        best_child_score = float('inf')
+        best_child_key = None
         for child in curr.children:
             stats_by_office, meeting_stats = _evaluate_single_meeting_point(
                 df_ts,
@@ -592,10 +592,59 @@ def evaluate_naive_atAirport(
                 arrive_before,
                 duration_days,
             )
-            if child.children == None:
+            if child.children is None:
                 stats_by_meeting_point_by_office[child.rep] = stats_by_office
                 stats_by_meeting_point[child.rep] = meeting_stats
-            # update best_child
+
+            total_score = meeting_stats.get("total_score")
+            fairness = meeting_stats.get("fairness")
+            total_co2 = meeting_stats.get("total_co2")
+
+            try:
+                score_value = float(total_score)
+            except (TypeError, ValueError):
+                score_value = math.inf
+            if not math.isfinite(score_value):
+                score_value = math.inf
+
+            try:
+                fairness_value = float(fairness)
+            except (TypeError, ValueError):
+                fairness_value = math.inf
+            if not math.isfinite(fairness_value):
+                fairness_value = math.inf
+
+            try:
+                co2_value = float(total_co2)
+            except (TypeError, ValueError):
+                co2_value = math.inf
+            if not math.isfinite(co2_value):
+                co2_value = math.inf
+
+            if meeting_stats.get("event_dates", {}).get("start") is None:
+                score_value = math.inf
+                fairness_value = math.inf
+                co2_value = math.inf
+
+            try:
+                office_priority = OFFICES.index(child.rep)
+            except ValueError:
+                office_priority = len(OFFICES)
+
+            child_key = (
+                score_value,
+                fairness_value,
+                co2_value,
+                office_priority,
+                child.rep,
+            )
+
+            if best_child_key is None or child_key < best_child_key:
+                best_child = child
+                best_child_key = child_key
+
+        if best_child is None:
+            break
         curr = best_child
     
     return stats_by_meeting_point, stats_by_meeting_point_by_office
