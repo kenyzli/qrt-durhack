@@ -6,7 +6,7 @@ import os
 import numpy as np
 import google.generativeai as genai
 
-from main import evaluate_naive_atOffice, OFFICES
+from main import evaluate_naive_atOffice, OFFICES, evaluate_naive_atAirport
 
 app = Flask(__name__)
 
@@ -149,6 +149,7 @@ def plan():
     attendees = payload.get("attendees", {})
     window = payload.get("availability_window", {})
     duration = payload.get("event_duration", {})
+    airports = payload.get("airports", False)
 
     # map city names to IATA
     unknown = [c for c in attendees.keys() if c not in CITY_TO_IATA]
@@ -166,11 +167,17 @@ def plan():
     # evaluate_naive_atOffice only uses days for duration; keep hours separately
     duration_days = int(duration.get("days", 0)) + duration.get("hours", 0) / 24.0
 
+    meeting_stats, meeting_stats_by_office = {}
+
     # call the existing function to pick flights
     try:
-        meeting_stats, meeting_stats_by_office = evaluate_naive_atOffice(
-            outbound_map, window_start, window_end, duration_days
-        )
+        if airports:
+            meeting_stats, meeting_stats_by_office = evaluate_naive_atAirport(
+                outbound_map, window_start, window_end, duration_days)
+        else:
+            meeting_stats, meeting_stats_by_office = evaluate_naive_atOffice(
+                outbound_map, window_start, window_end, duration_days)
+
     except Exception as e:
         return jsonify({"error": "evaluation_failed", "detail": str(e)}), 500
 

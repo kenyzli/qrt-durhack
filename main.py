@@ -503,6 +503,63 @@ def _evaluate_single_meeting_point(
 
     return stats_by_office, meeting_stats
 
+class SearchNode:
+    def __init__(self, rep, children=None):
+        self.rep = rep
+        self.children = children
+
+def evaluate_naive_atAirport(
+
+    outbound_map,  # outbound_office: num coming from there
+    window_start, # dict - year, month, day
+    window_end, 
+    duration_days):
+
+    window_start = _ensure_naive(window_start)
+    window_end = _ensure_naive(window_end)
+
+    depart_after = window_start + timedelta(days=2)
+    arrive_before = window_end + timedelta(days=-duration_days)
+    schedule_start = window_start - timedelta(days=2)
+    schedule_end = arrive_before
+
+    schedules = _scan_schedule_window(schedule_start, schedule_end)
+    flight_date_start = schedule_start.date()
+    flight_date_end = schedule_end.date()
+    schedules = schedules.filter(
+        pl.col("FLIGHT_DATE")
+        .str.strptime(pl.Date, "%Y-%m-%d", strict=False)
+        .is_between(flight_date_start, flight_date_end, closed="both")
+    )
+
+    df = _prepare_flight_dataframe(schedules)
+    df_ts = with_connection_timestamps(df)
+    df_ts = _filter_timetable_by_time(df_ts, depart_after, arrive_before)
+    df_ts = _filter_timetable_by_network(df_ts, outbound_map)
+    stats_by_meeting_point = {}
+    stats_by_meeting_point_by_office = {}
+
+    curr = search_root
+
+    while curr.children != None:
+        best_child = None
+        best_child_score = float('inf')
+        for child in curr.children:
+            stats_by_office, meeting_stats = _evaluate_single_meeting_point(
+                df_ts,
+                child.rep,
+                outbound_map,
+                depart_after,
+                arrive_before,
+                duration_days,
+            )
+            if child.children == None:
+                stats_by_meeting_point_by_office[child.rep] = stats_by_office
+                stats_by_meeting_point[child.rep] = meeting_stats
+            # update best_child
+        curr = best_child
+    
+    return stats_by_meeting_point, stats_by_meeting_point_by_office
 
 def evaluate_naive_atOffice(
 
