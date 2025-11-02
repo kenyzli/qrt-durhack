@@ -508,6 +508,45 @@ class SearchNode:
         self.rep = rep
         self.children = children
 
+
+middle_east = SearchNode("DXB", [SearchNode("DOH"), SearchNode("IST")])
+
+pacific_coast = SearchNode("SFO", [SearchNode("SEA")])
+desert_southwest = SearchNode("LAS", [SearchNode("PHX")])
+west = SearchNode("LAX", [pacific_coast, desert_southwest])
+central_north = SearchNode("ORD", [SearchNode("MSP"), SearchNode("DTW"), SearchNode("DEN")])
+central_south = SearchNode("DFW", [SearchNode("IAH"), SearchNode("MEX")])
+southeast = SearchNode("ATL", [SearchNode("CLT"),search_root("MCO"),SearchNode("MIA")])
+new_york_cluster = SearchNode("JFK", [SearchNode("EWR"), SearchNode("PHL")])
+northeast_canada = SearchNode("BOS", [SearchNode("YYZ")])
+east = SearchNode("JFK", [southeast, new_york_cluster, northeast_canada])
+north_america = SearchNode("ATL", [west, central_north, central_south, east])
+
+south_america = SearchNode("GRU")
+
+china_east = SearchNode("PVG", [SearchNode("PEK"), SearchNode("SHA")])
+china_southwest = SearchNode("CAN", [SearchNode("SZX"), SearchNode("CTU"), SearchNode("KMG")])
+north_asia = SearchNode("HND", [SearchNode("NRT"), SearchNode("ICN")])
+greater_china = SearchNode("HKG", [SearchNode("TPE")])
+south_asia = SearchNode("DEL", [SearchNode("BOM")])
+china = SearchNode("PVG", [china_east, china_southwest, north_asia, greater_china, south_asia])
+south_east_asia = SearchNode("SIN", [SearchNode("KUL"), SearchNode("BKK"), SearchNode("MNL"), SearchNode("CGK")])
+oceania = SearchNode("SYD", [SearchNode("MEL")])
+
+asia_pacific = SearchNode("DEL", [china, south_east_asia, oceania])
+
+# Europe
+northwest_hubs = SearchNode("CDG", [SearchNode("AMS"), SearchNode("FRA")])
+british_isles = SearchNode("LHR", [SearchNode("LGW")])
+central_south = SearchNode("MUC", [SearchNode("FCO")])
+iberia = SearchNode("MAD", [SearchNode("BCN")])
+west_europe = SearchNode("CDG", [northwest_hubs, british_isles, central_south, iberia])
+east_europe = SearchNode("IST", [SearchNode("DME")])
+
+europe = SearchNode("LHR", [east_europe, west_europe])
+
+search_root = SearchNode("IST", [middle_east, north_america, south_america, asia_pacific, europe])
+
 def evaluate_naive_atAirport(
 
     outbound_map,  # outbound_office: num coming from there
