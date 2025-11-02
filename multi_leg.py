@@ -2,31 +2,16 @@ from __future__ import annotations
 import polars as pl
 from datetime import datetime, timedelta
 from math import inf
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict, Tuple, Iterable
+import time
+import weakref
 
 # ---------- Timestamp helpers for OAG-like HHMM + ARRDAY ----------
 
-def _hhmm_to_timedelta(hhmm: int) -> timedelta:
-    """Convert HHMM integer (e.g., 5 -> 00:05, 10 -> 00:10, 1650 -> 16:50) to timedelta."""
-    h, m = divmod(int(hhmm), 100)
-    return timedelta(hours=h, minutes=m)
-
-def _arrday_to_offset(arrday: Optional[str]) -> int:
-    """
-    Map ARRDAY markers to day offsets:
-      'P' => -1  (arrives previous day)
-      '1' => +1
-      '2' => +2
-      None or '' or '0' or unrecognised => 0
-    """
-    if arrday is None:
-        return 0
-    arrday = str(arrday).strip().upper()
-    if arrday == "P":
-        return -1
-    if arrday.isdigit():
-        return int(arrday)
-    return 0
+def _hhmm_duration_expr(column: str) -> pl.Expr:
+    """Return a duration expression representing HHMM values stored as integers."""
+    base = pl.col(column).cast(pl.Int64)
+    return pl.duration(hours=(base // 100), minutes=(base % 100))
 
 def with_connection_timestamps(df: pl.DataFrame) -> pl.DataFrame:
     """
@@ -54,25 +39,24 @@ def with_connection_timestamps(df: pl.DataFrame) -> pl.DataFrame:
         )
         .with_columns(
             # Departure timestamp = dep_date + HHMM
+            (pl.col("dep_date").cast(pl.Datetime) + _hhmm_duration_expr("DEPTIM")).alias("dep_ts"),
+            # Arrival timestamp = dep_date + day offset + HHMM
             (
-                pl.col("dep_date")
-                .cast(pl.Datetime)
-                + (pl.col("DEPTIM").cast(pl.Int64).map_elements(_hhmm_to_timedelta))
-            ).alias("dep_ts"),
-            # Arrival date = dep_date + day_offset(ARRDAY)
-            (
-                pl.col("dep_date")
-                + pl.col("ARRDAY_norm").map_elements(lambda s: timedelta(days=_arrday_to_offset(s)))
-            ).alias("arr_date"),
+                pl.col("dep_date").cast(pl.Datetime)
+                + pl.duration(
+                    days=(
+                        pl.when(pl.col("ARRDAY_norm") == "P")
+                        .then(pl.lit(-1))
+                        .otherwise(
+                            pl.col("ARRDAY_norm").cast(pl.Int32, strict=False)
+                        )
+                        .fill_null(0)
+                    )
+                )
+                + _hhmm_duration_expr("ARRTIM")
+            ).alias("arr_ts"),
         )
-        .with_columns(
-            # Arrival timestamp = arrival_date + HHMM
-            (
-                pl.col("arr_date").cast(pl.Datetime)
-                + (pl.col("ARRTIM").cast(pl.Int64).map_elements(_hhmm_to_timedelta))
-            ).alias("arr_ts")
-        )
-        .drop(["dep_date", "arr_date", "ARRDAY_norm"])
+        .drop(["dep_date", "ARRDAY_norm"])
     )
     return out
 
@@ -83,27 +67,53 @@ class Connection(Tuple):
     # Structure:
     # (dep_ts, arr_ts, dep_airport, arr_airport, carrier, flight_number, row_idx)
 
+_build_connections_cache: Dict[int, Tuple[weakref.ref, List[Tuple[datetime, datetime, str, str, Optional[str], Optional[str], int]]]] = {}
+
+def _try_get_cached_connections(df: pl.DataFrame):
+    key = id(df)
+    entry = _build_connections_cache.get(key)
+    if not entry:
+        return None
+    df_ref, conns = entry
+    cached_df = df_ref()
+    if cached_df is None or cached_df is not df:
+        # Underlying DataFrame is gone or replaced; drop the stale cache entry.
+        _build_connections_cache.pop(key, None)
+        return None
+    return conns
+
 def build_connections(df: pl.DataFrame) -> List[Tuple[datetime, datetime, str, str, Optional[str], Optional[str], int]]:
     """
     Convert to a list of connections sorted by departure time.
     Each connection is a tuple: (dep_ts, arr_ts, dep_airport, arr_airport, carrier, flight_number, row_idx)
     """
-    # Select only the needed columns to minimize Python overhead
-    slim = df.select(
-        "dep_ts", "arr_ts", "DEPAPT", "ARRAPT", "CARRIER", "FLTNO"
-    ).with_row_index(name="__row_idx__")
+    cached = _try_get_cached_connections(df)
+    if cached is not None:
+        return cached
 
-    # Bring to Python lists (fast; avoids per-row .to_dict cost)
-    dep_ts = slim["dep_ts"].to_list()
-    arr_ts = slim["arr_ts"].to_list()
-    dep_ap = slim["DEPAPT"].to_list()
-    arr_ap = slim["ARRAPT"].to_list()
-    carriers = slim["CARRIER"].to_list()
-    flight_numbers = slim["FLTNO"].to_list()
-    idxs   = slim["__row_idx__"].to_list()
+    # Select only the needed columns to minimize Python overhead and sort in Polars
+    slim = (
+        df.select(
+            "dep_ts", "arr_ts", "DEPAPT", "ARRAPT", "CARRIER", "FLTNO"
+        )
+        .with_row_index(name="__row_idx__")
+        .sort("dep_ts")
+    )
 
-    conns = list(zip(dep_ts, arr_ts, dep_ap, arr_ap, carriers, flight_numbers, idxs))
-    conns.sort(key=lambda x: x[0])  # sort by departure time
+    if slim.height:
+        # Bring to Python lists (fast; avoids per-row .to_dict cost)
+        dep_ts = slim["dep_ts"].to_list()
+        arr_ts = slim["arr_ts"].to_list()
+        dep_ap = slim["DEPAPT"].to_list()
+        arr_ap = slim["ARRAPT"].to_list()
+        carriers = slim["CARRIER"].to_list()
+        flight_numbers = slim["FLTNO"].to_list()
+        idxs = slim["__row_idx__"].to_list()
+
+        conns = list(zip(dep_ts, arr_ts, dep_ap, arr_ap, carriers, flight_numbers, idxs))
+    else:
+        conns = []
+    _build_connections_cache[id(df)] = (weakref.ref(df), conns)
     return conns
 
 def itinerary_travel_time(itinerary: List[Dict]) -> Optional[timedelta]:
@@ -116,6 +126,7 @@ def itinerary_travel_time(itinerary: List[Dict]) -> Optional[timedelta]:
     final_arrival = itinerary[-1]["arr_ts"]
     return final_arrival - first_departure
 
+
 def csa_fastest_route(
     df: pl.DataFrame,
     origin: str,
@@ -124,6 +135,7 @@ def csa_fastest_route(
     latest_arrival: datetime,
     min_connection: timedelta = timedelta(minutes=30),
     min_origin_buffer: timedelta = timedelta(0),
+    focus_airports: Optional[Iterable[str]] = None,
 ) -> Tuple[Optional[List[Dict]], Optional[datetime]]:
     """
     Single-pass Connection Scan Algorithm:
@@ -136,16 +148,32 @@ def csa_fastest_route(
     # Pre-filter to a time window to keep the scan lean:
     # Keep connections that depart no earlier than (earliest_departure - min_origin_buffer)
     # and arrive no later than latest_arrival.
+    t_start = time.perf_counter()
     window = df.filter(
         (pl.col("arr_ts") <= pl.lit(latest_arrival))
         & (pl.col("dep_ts") >= pl.lit(earliest_departure - min_origin_buffer))
+    )
+    if focus_airports:
+        focus_list = list(dict.fromkeys(focus_airports))
+        window = window.filter(
+            pl.col("DEPAPT").is_in(focus_list)
+            | pl.col("ARRAPT").is_in(focus_list)
+        )
+    print(
+        f"[CSA] Filter window retained {window.height} rows "
+        f"in {time.perf_counter() - t_start:.4f}s"
     )
 
     if window.height == 0:
         return None, None
 
     # Build scan list
+    t_build = time.perf_counter()
     conns = build_connections(window)
+    print(
+        f"[CSA] Built {len(conns)} connections "
+        f"in {time.perf_counter() - t_build:.4f}s"
+    )
 
     # Label sets: earliest known time you can be at airport a
     earliest: Dict[str, datetime] = {}
@@ -162,6 +190,8 @@ def csa_fastest_route(
     pred: Dict[str, Tuple[str, Tuple[datetime, datetime, str, str, Optional[str], Optional[str], int]]] = {}
 
     # Scan
+    t_scan = time.perf_counter()
+    relaxations = 0
     for dep_ts, arr_ts, u, v, carrier, flight_number, row_idx in conns:
         # Skip too-early departures or already too-late arrivals
         if dep_ts < earliest_departure - min_origin_buffer:
@@ -187,12 +217,18 @@ def csa_fastest_route(
             # After arriving at v at arr_ts, the earliest time we can depart from v is arr_ts + min_connection
             available_from[v] = arr_ts + min_connection
             pred[v] = (u, (dep_ts, arr_ts, u, v, carrier, flight_number, row_idx))
+            relaxations += 1
+    print(
+        f"[CSA] Scan finished with {relaxations} relaxations "
+        f"in {time.perf_counter() - t_scan:.4f}s"
+    )
 
     # If destination never improved within cutoff
     if (destination not in earliest) or (earliest[destination] > latest_arrival):
         return None, None
 
     # Reconstruct path
+    t_reconstruct = time.perf_counter()
     path: List[Tuple[datetime, datetime, str, str, Optional[str], Optional[str], int]] = []
     a = destination
     while a != origin:
@@ -203,6 +239,10 @@ def csa_fastest_route(
         path.append(conn)
         a = u
     path.reverse()
+    print(
+        f"[CSA] Path reconstruction produced {len(path)} legs "
+        f"in {time.perf_counter() - t_reconstruct:.4f}s"
+    )
 
     # Provide a clean, user-friendly itinerary, including original DataFrame row index
     itinerary = []
@@ -227,5 +267,3 @@ def csa_fastest_route(
         })
 
     return itinerary, earliest[destination]
-
-

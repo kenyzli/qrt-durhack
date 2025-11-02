@@ -342,6 +342,60 @@ def evaluate_naive_atOffice(
 
     df_ts = with_connection_timestamps(df)
 
+    # Trim the timetable before running CSA so we don't scan hundreds of thousands of irrelevant flights.
+    # Allow a small slack either side of the computed travel window to keep viable connections.
+    csa_slack = timedelta(hours=12)
+    dep_lower_bound = depart_after - csa_slack
+    dep_upper_bound = arrive_before + csa_slack
+    arr_upper_bound = arrive_before + csa_slack
+    pre_filter_rows = df_ts.height
+    df_ts = df_ts.filter(
+        (pl.col("dep_ts") >= pl.lit(dep_lower_bound))
+        & (pl.col("dep_ts") <= pl.lit(dep_upper_bound))
+        & (pl.col("arr_ts") <= pl.lit(arr_upper_bound))
+    )
+    print(
+        f"[CSA] Time-window filter reduced timetable from {pre_filter_rows} to {df_ts.height} rows "
+        f"for window {dep_lower_bound} → {arr_upper_bound}"
+    )
+
+    # Further prune to airports that are actually reachable from our attendees within a few legs.
+    # This avoids carrying flights that are completely disconnected from any origin/meeting point.
+    focus_airports = set(outbound_map.keys()) | set(OFFICES)
+    network_airports = set(focus_airports)
+    max_hops = 1 # allow up to 3 hops (4 legs) to expand the reachable network
+    for hop in range(max_hops):
+        hop_filter = df_ts.filter(
+            pl.col("DEPAPT").is_in(network_airports)
+            | pl.col("ARRAPT").is_in(network_airports)
+        )
+        if "DEPAPT" in hop_filter.columns:
+            reachable_dep = hop_filter["DEPAPT"].drop_nulls().to_list()
+        else:
+            reachable_dep = []
+        if "ARRAPT" in hop_filter.columns:
+            reachable_arr = hop_filter["ARRAPT"].drop_nulls().to_list()
+        else:
+            reachable_arr = []
+        hop_airports = set(reachable_dep) | set(reachable_arr)
+        before = len(network_airports)
+        network_airports |= hop_airports
+        print(
+            f"[CSA] Hop {hop + 1}: expanded network to {len(network_airports)} airports"
+        )
+        if len(network_airports) == before:
+            break
+
+    network_filter_rows = df_ts.height
+    df_ts = df_ts.filter(
+        pl.col("DEPAPT").is_in(network_airports)
+        | pl.col("ARRAPT").is_in(network_airports)
+    )
+    print(
+        f"[CSA] Network filter reduced timetable from {network_filter_rows} to {df_ts.height} rows "
+        f"across {len(network_airports)} airports"
+    )
+
     stats_by_meeting_point = {}
     stats_by_meeting_point_by_office = {}
 
@@ -374,6 +428,7 @@ def evaluate_naive_atOffice(
                 latest_arrival=arrive_before,
                 min_connection=timedelta(minutes=30),   # set connection buffer
                 min_origin_buffer=timedelta(minutes=0),
+                focus_airports=focus_airports,
             )
 
             if not itinerary or eta is None:
